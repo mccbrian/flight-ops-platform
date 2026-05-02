@@ -1,0 +1,26 @@
+# Maven
+target/
+!target/*.jar
+
+# IDEs and tooling
+.idea/
+.vscode/
+*.iml
+
+# Prevent local config from being baked into Docker images
+application-local.yaml
+.gitattributes
+mvnw
+mvnw.cmd
+qodana.yaml
+.mvn/wrapper/maven-wrapper.properties
+.env
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
