@@ -5,7 +5,6 @@ import com.flightops.contracts.enums.OperationType;
 import java.time.Instant;
 
 public record FlightOperationEvent (
-
         Integer flightId,
         OperationType operationType,
         String status,
@@ -13,5 +12,4 @@ public record FlightOperationEvent (
         Integer delayMinutes,
         String reason,
         Instant eventTime
-
 ) {}

@@ -6,12 +6,12 @@ import com.flightops.contracts.ingestion.FlightOperationEvent;
 import java.time.Instant;
 import java.util.UUID;
 
-public record EventEnvelope(
+public record EventEnvelope<T>(
         UUID eventId,
         EventType eventType,
         String aggregateId,
         String correlationId,
         Instant occurredAt,
-        FlightOperationEvent payload
+        T payload
 ) {}
 
