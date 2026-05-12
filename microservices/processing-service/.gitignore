@@ -4,6 +4,7 @@ target/
 
 # IDEs and tooling
 .idea/
+.vscode/
 *.iml
 
 # Prevent local config from being baked into Docker images
