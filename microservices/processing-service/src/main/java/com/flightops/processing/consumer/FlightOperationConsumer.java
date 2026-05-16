@@ -2,6 +2,7 @@ package com.flightops.processing.consumer;
 
 import com.flightops.contracts.ingestion.FlightOperationEvent;
 import com.flightops.processing.dto.EventEnvelopeJson;
+import com.flightops.processing.exception.FlightOperationValidationException;
 import com.flightops.processing.idempotency.EventIdempotencyService;
 import com.flightops.processing.service.FlightOperationProcessingService;
 import lombok.RequiredArgsConstructor;
@@ -50,8 +51,21 @@ public class FlightOperationConsumer {
             idempotencyService.markProcessed(eventId);
 
             logProcessingSuccess(envelope);
-        } catch (Exception ex) {
-            handleConsumptionFailure(rawMessage, envelope, ex);
+
+        } catch (FlightOperationValidationException exception) {
+            idempotencyService.releaseClaim(exception.eventId());
+
+            log.warn("Validation failed. eventId={}, errors={}",
+                    exception.eventId(),
+                    exception.errors());
+        } catch (Exception exception) {
+            if (envelope != null) {
+                idempotencyService.releaseClaim(envelope.eventId());
+                log.error("Failed to process event. eventId={}, rawMessage={}",
+                        envelope.eventId(), rawMessage, exception);
+            } else {
+                log.error("Failed to parse raw message. rawMessage={}", rawMessage, exception);
+            }
         }
     }
 
