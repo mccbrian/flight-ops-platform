@@ -4,8 +4,11 @@ import com.flightops.contracts.ingestion.FlightOperationEvent;
 import com.flightops.processing.domain.FlightOperationStatus;
 import com.flightops.processing.domain.ProcessedEvent;
 import com.flightops.processing.dto.EventEnvelopeJson;
+import com.flightops.processing.exception.FlightOperationValidationException;
 import com.flightops.processing.repository.FlightOperationStatusRepository;
 import com.flightops.processing.repository.ProcessedEventRepository;
+import com.flightops.processing.validation.FlightOperationValidator;
+import com.flightops.processing.validation.ValidationResult;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,45 +21,43 @@ public class FlightOperationProcessingService {
 
     private static final Logger log = LoggerFactory.getLogger(FlightOperationProcessingService.class);
 
+    private final FlightOperationValidator validator;
     private final ProcessedEventRepository processedEventRepository;
-    private final FlightOperationStatusRepository flightOperationStatusRepository;
+    private final FlightOperationStatusRepository statusRepository;
 
     @Transactional
     public void process(EventEnvelopeJson envelope, FlightOperationEvent payload) {
 
-        // DB idempotency
+        ValidationResult result = validator.validate(payload);
+
+        if (!result.valid()) {
+            throw new FlightOperationValidationException(envelope.eventId(), result.errors());
+        }
+
         if (processedEventRepository.existsById(envelope.eventId())) {
-            log.info("Duplicate event detected at DB level. eventId={}", envelope.eventId());
+            log.info("Duplicate event detected at database level. eventId={}", envelope.eventId());
             return;
         }
 
-        processedEventRepository.save(
-                new ProcessedEvent(
-                        envelope.eventId(),
-                        envelope.eventType().name(),
-                        envelope.aggregateId()
-                )
-        );
+        FlightOperationStatus status = statusRepository.findById(payload.flightId())
+                .map(existing -> {
+                    existing.update(payload.status(), payload.gate(), payload.delayMinutes());
+                    return existing;
+                })
+                .orElseGet(() -> new FlightOperationStatus(
+                        payload.flightId(),
+                        payload.status(),
+                        payload.gate(),
+                        payload.delayMinutes()
+                ));
 
-        // Aggregate update
-        var existing = flightOperationStatusRepository.findById(payload.flightId());
+        statusRepository.save(status);
 
-        if (existing.isPresent()) {
-            var entity = existing.get();
-            entity.update(payload.status(), payload.gate(), payload.delayMinutes());
-            flightOperationStatusRepository.save(entity);
-        } else {
-            flightOperationStatusRepository.save(
-                    new FlightOperationStatus(
-                            payload.flightId(),
-                            payload.status(),
-                            payload.gate(),
-                            payload.delayMinutes()
-                    )
-            );
-        }
-
-        log.info("Flight operation persisted. flightId={}", payload.flightId());
+        processedEventRepository.save(new ProcessedEvent(
+                envelope.eventId(),
+                envelope.eventType().name(),
+                envelope.aggregateId()
+        ));
     }
 
 }
