@@ -3,6 +3,25 @@ package com.flightops.processing.validation;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * Represents the outcome of a validation process, encapsulating its validity
+ * and any associated validation errors.
+ *
+ * <ul>
+ *     <li>{@code valid} indicates whether the validation was successful.</li>
+ *     <li>{@code errors} contains a list of {@link ValidationError} instances describing
+ *         the validation failures, if any.</li>
+ * </ul>
+ *
+ * This class enforces the following invariants:
+ * <ul>
+ *     <li>A valid result cannot contain any errors.</li>
+ *     <li>An invalid result must contain at least one error.</li>
+ * </ul>
+ *
+ * It provides factory methods for creating successful and failure results, along with
+ * utility methods to inspect the nature of the validation errors.
+ */
 public record ValidationResult(
         boolean valid,
         List<ValidationError> errors
@@ -11,10 +30,8 @@ public record ValidationResult(
     public ValidationResult {
         Objects.requireNonNull(errors, "errors must not be null");
 
-        // Make defensive immutable copy
         errors = List.copyOf(errors);
 
-        // Enforce invariants
         if (valid && !errors.isEmpty()) {
             throw new IllegalArgumentException("Valid result cannot contain errors");
         }
