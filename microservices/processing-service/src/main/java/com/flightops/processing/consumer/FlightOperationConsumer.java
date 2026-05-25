@@ -1,16 +1,22 @@
 package com.flightops.processing.consumer;
 
+import com.flightops.contracts.failure.FailedEvent;
 import com.flightops.contracts.ingestion.FlightOperationEvent;
 import com.flightops.processing.dto.EventEnvelopeJson;
 import com.flightops.processing.exception.FlightOperationValidationException;
 import com.flightops.processing.idempotency.EventIdempotencyService;
+import com.flightops.processing.producer.FailureEventProducer;
 import com.flightops.processing.service.FlightOperationProcessingService;
+import com.flightops.processing.validation.ValidationError;
+import com.flightops.processing.validation.ValidationErrorType;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
+
+import java.time.Instant;
 
 @Component
 @RequiredArgsConstructor
@@ -21,15 +27,23 @@ public class FlightOperationConsumer {
     private final ObjectMapper objectMapper;
     private final EventIdempotencyService idempotencyService;
     private final FlightOperationProcessingService processingService;
+    private final FailureEventProducer failureEventProducer;
 
     /**
-     * Consumes a raw message from the specified Kafka topic and processes it.
-     * This method attempts to parse the raw message into an {@code EventEnvelopeJson},
-     * validates its uniqueness, transforms it into a domain-specific {@code FlightOperationEvent},
-     * and processes it using the appropriate services.
-     * If the processing fails, an error handling mechanism is invoked.
+     * Consumes and processes a raw Kafka message from the ingestion topic.
      *
-     * @param rawMessage The raw Kafka message payload to be consumed and processed.
+     * <p>The message is deserialized into an {@code EventEnvelopeJson}, claimed for
+     * idempotent processing, transformed into a {@code FlightOperationEvent}, and
+     * delegated to the processing service.</p>
+     *
+     * <p>If validation fails, the event claim is released and the message is routed
+     * either to a retry topic or dead-letter topic depending on whether the
+     * validation errors are retryable.</p>
+     *
+     * <p>If an unexpected failure occurs during processing, the event claim is
+     * released and the failure is logged.</p>
+     *
+     * @param rawMessage the raw Kafka message payload to consume
      */
     @KafkaListener(
             topics = "${app.kafka.topics.ingestion}",
@@ -40,33 +54,89 @@ public class FlightOperationConsumer {
 
         try {
             envelope = readEnvelope(rawMessage);
-            var eventId = envelope.eventId();
 
             if (!tryClaimEvent(envelope)) {
                 return;
             }
 
-            FlightOperationEvent payload = toFlightOperationEvent(envelope);
-            processingService.process(envelope, payload);
-            idempotencyService.markProcessed(eventId);
-
-            logProcessingSuccess(envelope);
+            processEvent(envelope);
 
         } catch (FlightOperationValidationException exception) {
-            idempotencyService.releaseClaim(exception.eventId());
+            handleValidationFailure(envelope, exception, rawMessage);
 
-            log.warn("Validation failed. eventId={}, errors={}",
-                    exception.eventId(),
-                    exception.errors());
         } catch (Exception exception) {
-            if (envelope != null) {
-                idempotencyService.releaseClaim(envelope.eventId());
-                log.error("Failed to process event. eventId={}, rawMessage={}",
-                        envelope.eventId(), rawMessage, exception);
-            } else {
-                log.error("Failed to parse raw message. rawMessage={}", rawMessage, exception);
-            }
+            handleUnexpectedFailure(envelope, rawMessage, exception);
         }
+    }
+
+    private void processEvent(EventEnvelopeJson envelope) {
+        FlightOperationEvent payload = toFlightOperationEvent(envelope);
+
+        processingService.process(envelope, payload);
+
+        idempotencyService.markProcessed(envelope.eventId());
+
+        logProcessingSuccess(envelope);
+    }
+
+    private void handleValidationFailure(
+            EventEnvelopeJson envelope,
+            FlightOperationValidationException exception,
+            String rawMessage
+    ) {
+        idempotencyService.releaseClaim(exception.eventId());
+
+        FailedEvent failedEvent = buildFailedEvent(envelope, exception, rawMessage);
+
+        if (retryable(exception)) {
+            failureEventProducer.sendToRetry(failedEvent);
+
+            log.warn(
+                    "Validation failed with retryable errors. Routed to retry topic. eventId={}, errors={}",
+                    exception.eventId(),
+                    exception.errors()
+            );
+
+            return;
+        }
+
+        failureEventProducer.sendToDlq(failedEvent);
+
+        log.warn(
+                "Validation failed with non-retryable errors. Routed to DLQ. eventId={}, errors={}",
+                exception.eventId(),
+                exception.errors()
+        );
+    }
+
+    private boolean retryable(FlightOperationValidationException exception) {
+        return exception.errors().stream()
+                .anyMatch(error -> error.type() == ValidationErrorType.RETRYABLE);
+    }
+
+    private void handleUnexpectedFailure(
+            EventEnvelopeJson envelope,
+            String rawMessage,
+            Exception exception
+    ) {
+        if (envelope != null) {
+            idempotencyService.releaseClaim(envelope.eventId());
+
+            log.error(
+                    "Failed to process event. eventId={}, rawMessage={}",
+                    envelope.eventId(),
+                    rawMessage,
+                    exception
+            );
+
+            return;
+        }
+
+        log.error(
+                "Failed to parse raw message. rawMessage={}",
+                rawMessage,
+                exception
+        );
     }
 
     private EventEnvelopeJson readEnvelope(String rawMessage) throws Exception {
@@ -100,6 +170,28 @@ public class FlightOperationConsumer {
         idempotencyService.releaseClaim(envelope.eventId());
         log.error("Failed to process event. eventId={}, rawMessage={}",
                 envelope.eventId(), rawMessage, ex);
+    }
+
+    private FailedEvent buildFailedEvent(
+            EventEnvelopeJson envelope,
+            FlightOperationValidationException exception,
+            String rawMessage) {
+
+        boolean retryable = retryable(exception);
+
+        return new FailedEvent(
+                envelope.eventId(),
+                envelope.eventType().name(),
+                envelope.aggregateId(),
+                envelope.correlationId(),
+                retryable ? "RETRYABLE" : "NON_RETRYABLE",
+                exception.errors().stream()
+                        .map(ValidationError::code)
+                        .toList(),
+                exception.getMessage(),
+                rawMessage,
+                Instant.now()
+        );
     }
 
 }
