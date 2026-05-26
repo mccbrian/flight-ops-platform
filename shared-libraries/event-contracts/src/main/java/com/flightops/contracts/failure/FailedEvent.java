@@ -2,6 +2,7 @@ package com.flightops.contracts.failure;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 
@@ -20,7 +21,7 @@ import java.util.UUID;
  *                    (for example, {@code RETRYABLE} or {@code NON_RETRYABLE})
  * @param errorCodes the validation or processing error codes associated with the failure
  * @param reason a human-readable description of the failure
- * @param rawPayload the original raw event payload received for processing
+ * @param payloadMap the structured map representing the deserialized event payload received for processing
  * @param failedAt the timestamp indicating when the failure occurred
  */
 public record FailedEvent(
@@ -31,6 +32,6 @@ public record FailedEvent(
         String failureType,
         List<String> errorCodes,
         String reason,
-        String rawPayload,
+        Map<String, Object> payloadMap,
         Instant failedAt
 ) {}
