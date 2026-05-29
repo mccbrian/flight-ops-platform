@@ -38,3 +38,5 @@ app:
       ingestion: flight-ops.ingestion.v1
       retry: flight-ops.ingestion.retry.v1
       dlq: flight-ops.ingestion.dlq.v1
+  retry:
+    max-attempts: 3

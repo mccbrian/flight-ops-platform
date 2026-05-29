@@ -33,5 +33,7 @@ public record FailedEvent(
         List<String> errorCodes,
         String reason,
         Map<String, Object> payloadMap,
+        Integer attemptCount,
+        Integer maxAttempts,
         Instant failedAt
 ) {}

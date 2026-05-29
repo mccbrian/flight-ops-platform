@@ -10,6 +10,7 @@ import com.flightops.processing.validation.ValidationError;
 import com.flightops.processing.validation.ValidationErrorType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
@@ -28,15 +29,23 @@ public class EventProcessingCoordinator {
     private final FlightOperationProcessingService processingService;
     private final FailureEventProducer failureEventProducer;
 
+    @Value("${app.retry.max-attempts}")
+    private int maxAttempts;
+
     /**
-     * Processes a raw event message by parsing it, validating it, and passing it to
-     * downstream processing services. If the event is successfully processed, it is marked
-     * as processed. Handles validation and unexpected errors during processing, with appropriate
-     * error handling and retry mechanisms.
+     * Processes a raw event message by parsing it, validating it, and delegating it
+     * to downstream processing services.
+     * <p>
+     * If processing succeeds, the event is marked as processed in the idempotency store.
+     * If processing fails, the event is routed to either the retry topic or dead-letter
+     * topic depending on the retryability of the failure and the current retry attempt count.
      *
-     * @param rawMessage the raw event message received as a String
+     * @param rawMessage the raw event message received as a JSON string
+     * @param attemptCount the current processing attempt count for the event,
+     *                     starting at {@code 1} for initial ingestion and incremented
+     *                     for each retry attempt
      */
-    public void processRawEvent(String rawMessage) {
+    public void processRawEvent(String rawMessage, int attemptCount) {
         EventEnvelopeJson envelope = null;
 
         try {
@@ -59,10 +68,10 @@ public class EventProcessingCoordinator {
             );
 
         } catch (FlightOperationValidationException exception) {
-            handleValidationFailure(envelope, rawMessage, exception);
+            handleValidationFailure(envelope, rawMessage, attemptCount, exception);
 
         } catch (Exception exception) {
-            handleUnexpectedFailure(envelope, rawMessage, exception);
+            handleUnexpectedFailure(envelope, rawMessage, attemptCount, exception);
         }
     }
 
@@ -98,6 +107,7 @@ public class EventProcessingCoordinator {
     private void handleValidationFailure(
             EventEnvelopeJson envelope,
             String rawMessage,
+            int attemptCount,
             FlightOperationValidationException exception
     ) {
 
@@ -116,19 +126,21 @@ public class EventProcessingCoordinator {
                 envelope,
                 rawMessage,
                 retryable ? "RETRYABLE" : "NON_RETRYABLE",
+                attemptCount,
                 exception.errors().stream()
                         .map(ValidationError::code)
                         .toList(),
                 exception
         );
 
-        if (retryable) {
+        if (retryable && attemptCount < maxAttempts) {
 
             failureEventProducer.sendToRetry(failedEvent);
 
             log.warn(
-                    "Validation failed with retryable errors. Routed to retry topic. eventId={}, errors={}",
+                    "Validation failed with retryable errors. Routed to retry topic. eventId={}, attemptCount={}, errors={}",
                     exception.eventId(),
+                    attemptCount,
                     exception.errors()
             );
 
@@ -138,8 +150,10 @@ public class EventProcessingCoordinator {
         failureEventProducer.sendToDlq(failedEvent);
 
         log.warn(
-                "Validation failed with non-retryable errors. Routed to DLQ. eventId={}, errors={}",
+                "Validation failure routed to DLQ. eventId={}, attemptCount={}, retryable={}, errors={}",
                 exception.eventId(),
+                attemptCount,
+                retryable,
                 exception.errors()
         );
     }
@@ -147,6 +161,7 @@ public class EventProcessingCoordinator {
     private void handleUnexpectedFailure(
             EventEnvelopeJson envelope,
             String rawMessage,
+            int attemptCount,
             Exception exception
     ) {
 
@@ -163,15 +178,32 @@ public class EventProcessingCoordinator {
                 envelope,
                 rawMessage,
                 "RETRYABLE",
+                attemptCount,
                 List.of("UNEXPECTED_PROCESSING_ERROR"),
                 exception
         );
 
-        failureEventProducer.sendToRetry(failedEvent);
+        if (attemptCount < maxAttempts) {
+
+            failureEventProducer.sendToRetry(failedEvent);
+
+            log.error(
+                    "Unexpected processing failure routed to retry topic. eventId={}, attemptCount={}, rawMessage={}",
+                    envelope.eventId(),
+                    attemptCount,
+                    rawMessage,
+                    exception
+            );
+
+            return;
+        }
+
+        failureEventProducer.sendToDlq(failedEvent);
 
         log.error(
-                "Unexpected processing failure routed to retry topic. eventId={}, rawMessage={}",
+                "Unexpected processing failure routed to DLQ. eventId={}, attemptCount={}, rawMessage={}",
                 envelope.eventId(),
+                attemptCount,
                 rawMessage,
                 exception
         );
@@ -181,6 +213,7 @@ public class EventProcessingCoordinator {
             EventEnvelopeJson envelope,
             String rawMessage,
             String classification,
+            int attemptCount,
             List<String> errors,
             Exception exception
     ) {
@@ -196,6 +229,8 @@ public class EventProcessingCoordinator {
                 errors,
                 exception.getMessage(),
                 safeMessageMap(rawMessage),
+                attemptCount,
+                maxAttempts,
                 Instant.now()
         );
     }
