@@ -36,11 +36,11 @@ public class FailureEventProducer {
     /**
      * Sends a failed event to the configured Kafka retry topic.
      *
-     * @param event the {@code FailedEvent} object containing metadata and details about
+     * @param failedEvent the {@code FailedEvent} object containing metadata and details about
      *              the failed event that needs to be retried
      */
-    public void sendToRetry(FailedEvent event) {
-        send(retryTopic, event);
+    public void sendToRetry(FailedEvent failedEvent) {
+        send(retryTopic, failedEvent);
     }
 
     /**

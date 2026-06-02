@@ -38,7 +38,7 @@ public class EventProcessingCoordinator {
      * <p>
      * If processing succeeds, the event is marked as processed in the idempotency store.
      * If processing fails, the event is routed to either the retry topic or dead-letter
-     * topic depending on the retryability of the failure and the current retry attempt count.
+     * topic depending on the retry ability of the failure and the current retry attempt count.
      *
      * @param rawMessage the raw event message received as a JSON string
      * @param attemptCount the current processing attempt count for the event,

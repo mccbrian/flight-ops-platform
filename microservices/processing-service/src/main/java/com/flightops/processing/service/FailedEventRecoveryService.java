@@ -53,8 +53,7 @@ public class FailedEventRecoveryService {
      */
     public void recover(String rawFailedEvent) {
         try {
-            FailedEvent failedEvent =
-                    objectMapper.readValue(rawFailedEvent, FailedEvent.class);
+            FailedEvent failedEvent = objectMapper.readValue(rawFailedEvent, FailedEvent.class);
 
             log.info("Recovering failed event. originalEventId={}, attemptCount={}, failureType={}, errorCodes={}",
                     failedEvent.originalEventId(),
@@ -70,9 +69,8 @@ public class FailedEventRecoveryService {
             coordinator.processRawEvent(originalEvent, nextAttempt);
 
         } catch (Exception exception) {
-            log.error("Failed to recover failed event. rawFailedEvent={}",
-                    rawFailedEvent,
-                    exception);
+            log.error("Failed to recover failed event. rawFailedEvent={}", rawFailedEvent, exception);
+            throw exception;
         }
     }
 
