@@ -5,9 +5,12 @@ import com.flightops.contracts.ingestion.FlightOperationEvent;
 import com.flightops.processing.dto.EventEnvelopeJson;
 import com.flightops.processing.exception.FlightOperationValidationException;
 import com.flightops.processing.idempotency.EventIdempotencyService;
+import com.flightops.processing.metrics.FlightOperationMetrics;
 import com.flightops.processing.producer.FailureEventProducer;
 import com.flightops.processing.validation.ValidationError;
 import com.flightops.processing.validation.ValidationErrorType;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,6 +22,31 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Coordinates the end-to-end processing lifecycle of flight operation events.
+ *
+ * <p>This service acts as the orchestration layer for inbound event processing.
+ * It is responsible for:</p>
+ *
+ * <ul>
+ *   <li>Deserializing raw event messages into domain objects</li>
+ *   <li>Enforcing idempotent processing through the event claim store</li>
+ *   <li>Delegating business processing to the flight operation processing service</li>
+ *   <li>Marking successfully processed events in the idempotency store</li>
+ *   <li>Classifying processing failures and determining retry eligibility</li>
+ *   <li>Routing failed events to either retry or dead-letter topics</li>
+ *   <li>Recording operational metrics and processing latency</li>
+ * </ul>
+ *
+ * <p>Events are processed at most once through a claim-and-complete workflow.
+ * Duplicate or previously processed events are detected through the
+ * {@link EventIdempotencyService} and are not processed again.</p>
+ *
+ * <p>When processing fails, retryable failures may be routed to a retry topic
+ * until the configured maximum attempt count is reached. Non-retryable failures,
+ * or failures that have exhausted their retry attempts, are routed to a
+ * dead-letter queue (DLQ) for further investigation.</p>
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -28,25 +56,31 @@ public class EventProcessingCoordinator {
     private final EventIdempotencyService idempotencyService;
     private final FlightOperationProcessingService processingService;
     private final FailureEventProducer failureEventProducer;
+    private final FlightOperationMetrics metrics;
 
     @Value("${app.retry.max-attempts}")
     private int maxAttempts;
 
     /**
-     * Processes a raw event message by parsing it, validating it, and delegating it
-     * to downstream processing services.
+     * Processes a raw event message by parsing it, validating it, enforcing dempotency checks, and delegating business
+     * processing to downstream services.
      * <p>
-     * If processing succeeds, the event is marked as processed in the idempotency store.
-     * If processing fails, the event is routed to either the retry topic or dead-letter
-     * topic depending on the retry ability of the failure and the current retry attempt count.
+     * If processing succeeds, the event is marked as processed in the idempotency store and success metrics are recorded.
+     * <p>
+     * If processing fails, the event may be routed to either a retry topic or a dead-letter queue (DLQ) depending on the
+     * type of failure, retry eligibility, and the current retry attempt count.
+     * <p>
+     * Duplicate or previously claimed events are detected through the idempotency service and are ignored without
+     * further processing.
      *
      * @param rawMessage the raw event message received as a JSON string
      * @param attemptCount the current processing attempt count for the event,
-     *                     starting at {@code 1} for initial ingestion and incremented
-     *                     for each retry attempt
+     *                     starting at {@code 1} for initial ingestion and
+     *                     incremented for each retry attempt
      */
     public void processRawEvent(String rawMessage, int attemptCount) {
         EventEnvelopeJson envelope = null;
+        Timer.Sample sample = metrics.startProcessingTimer();
 
         try {
             envelope = readEnvelope(rawMessage);
@@ -62,16 +96,23 @@ public class EventProcessingCoordinator {
             idempotencyService.markProcessed(envelope.eventId());
 
             log.info(
-                    "Event processed successfully. eventId={}, aggregateId={}",
+                    "Event processed successfully. eventId={}, correlationId{}, aggregateId={}, flightId={}, operationType={}",
                     envelope.eventId(),
-                    envelope.aggregateId()
+                    envelope.correlationId(),
+                    envelope.aggregateId(),
+                    envelope.payload().flightId(),
+                    envelope.payload().operationType()
             );
+
+            metrics.incrementProcessed();
 
         } catch (FlightOperationValidationException exception) {
             handleValidationFailure(envelope, rawMessage, attemptCount, exception);
 
         } catch (Exception exception) {
             handleUnexpectedFailure(envelope, rawMessage, attemptCount, exception);
+        } finally {
+            metrics.stopProcessingTimer(sample);
         }
     }
 
@@ -83,10 +124,15 @@ public class EventProcessingCoordinator {
     private boolean claimEvent(EventEnvelopeJson envelope) {
         if (!idempotencyService.claimForProcessing(envelope.eventId())) {
 
+            metrics.incrementDuplicate();
+
             log.info(
-                    "Event already claimed or processed. eventId={}, aggregateId={}",
+                    "Event already claimed or processed. eventId={}, correlationId={}, aggregateId={}, flightId={}, operationType={}",
                     envelope.eventId(),
-                    envelope.aggregateId()
+                    envelope.correlationId(),
+                    envelope.aggregateId(),
+                    envelope.payload().flightId(),
+                    envelope.payload().operationType()
             );
 
             return false;
@@ -137,6 +183,8 @@ public class EventProcessingCoordinator {
 
             failureEventProducer.sendToRetry(failedEvent);
 
+            metrics.incrementRetry();
+
             log.warn(
                     "Validation failed with retryable errors. Routed to retry topic. eventId={}, attemptCount={}, errors={}",
                     exception.eventId(),
@@ -148,6 +196,9 @@ public class EventProcessingCoordinator {
         }
 
         failureEventProducer.sendToDlq(failedEvent);
+
+        metrics.incrementDlq();
+        metrics.incrementFailed();
 
         log.warn(
                 "Validation failure routed to DLQ. eventId={}, attemptCount={}, retryable={}, errors={}",
@@ -187,6 +238,8 @@ public class EventProcessingCoordinator {
 
             failureEventProducer.sendToRetry(failedEvent);
 
+            metrics.incrementRetry();
+
             log.error(
                     "Unexpected processing failure routed to retry topic. eventId={}, attemptCount={}, rawMessage={}",
                     envelope.eventId(),
@@ -199,6 +252,9 @@ public class EventProcessingCoordinator {
         }
 
         failureEventProducer.sendToDlq(failedEvent);
+
+        metrics.incrementDlq();
+        metrics.incrementFailed();
 
         log.error(
                 "Unexpected processing failure routed to DLQ. eventId={}, attemptCount={}, rawMessage={}",
