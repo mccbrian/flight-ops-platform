@@ -18,8 +18,7 @@ import java.util.UUID;
  *   <li>{@code aggregateId}: The identifier for the aggregate (e.g., a flight) that the event is associated with.</li>
  *   <li>{@code correlationId}: A correlation identifier for tracing and linking related events.</li>
  *   <li>{@code occurredAt}: The timestamp indicating when the event was generated.</li>
- *   <li>{@code payload}: The event payload, which is parsed as an {@code Object} to allow for flexible
- *       deserialization (e.g., into a standard Java Map or a specific domain object).</li>
+ *   <li>{@code payload}: The event payload, represented by {@link Payload}, containing details specific to the flight operation.</li>
  * </ul>
  */
 public record EventEnvelopeJson(
@@ -28,6 +27,5 @@ public record EventEnvelopeJson(
         String aggregateId,
         String correlationId,
         Instant occurredAt,
-        //using Object allows Jackson to parse it into a standard Java Map
-        Object payload
+        Payload payload
 ) {}
