@@ -51,3 +51,12 @@ app:
       dlq: flight-ops.ingestion.dlq.v1
   retry:
     max-attempts: 3
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  endpoint:
+    health:
+      show-details: always
