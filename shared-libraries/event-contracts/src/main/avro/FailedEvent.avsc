@@ -1,0 +1,31 @@
+{
+  "type": "record",
+  "name": "FailedEvent",
+  "namespace": "com.flightops.contracts.avro",
+  "fields": [
+    { "name": "originalEventId", "type": "string" },
+    { "name": "originalEventType", "type": "string" },
+    { "name": "aggregateId", "type": "string" },
+    { "name": "correlationId", "type": "string" },
+    { "name": "failureType", "type": "string" },
+    {
+      "name": "errorCodes",
+      "type": {
+        "type": "array",
+        "items": "string"
+      },
+      "default": []
+    },
+    { "name": "reason", "type": ["null", "string"], "default": null },
+    { "name": "rawPayload", "type": "string" },
+    { "name": "attemptCount", "type": "int", "default": 1 },
+    { "name": "maxAttempts", "type": "int", "default": 3 },
+    {
+      "name": "failedAt",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      }
+    }
+  ]
+}

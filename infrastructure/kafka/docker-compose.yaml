@@ -38,5 +38,17 @@ services:
       KAFKA_CLUSTERS_0_NAME: local-flight-ops
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
 
+  schema-registry:
+    image: confluentinc/cp-schema-registry:latest
+    container_name: flightops-schema-registry
+    depends_on:
+      - kafka
+    ports:
+      - "8085:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:29092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+
 volumes:
   kafka_data:
