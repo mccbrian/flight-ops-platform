@@ -17,7 +17,15 @@
 
     <properties>
         <java.version>25</java.version>
+        <kafka.avro.serializer.version>8.2.1</kafka.avro.serializer.version>
     </properties>
+
+    <repositories>
+        <repository>
+            <id>confluent</id>
+            <url>https://packages.confluent.io/maven/</url>
+        </repository>
+    </repositories>
 
     <dependencies>
         <dependency>
@@ -58,6 +66,10 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.flightops.contracts</groupId>
             <artifactId>event-contracts</artifactId>
             <version>1.0-SNAPSHOT</version>
@@ -78,7 +90,14 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.confluent</groupId>
+            <artifactId>kafka-avro-serializer</artifactId>
+            <version>${kafka.avro.serializer.version}</version>
+        </dependency>
     </dependencies>
+
+
 
     <build>
         <plugins>
