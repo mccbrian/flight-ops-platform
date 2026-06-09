@@ -10,10 +10,14 @@ spring:
 
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      value-serializer: io.confluent.kafka.serializers.KafkaAvroSerializer
 
       properties:
-        spring.json.add.type.headers: false
+        schema.registry.url: http://localhost:8085
+        auto.register.schemas: true
+        use.latest.version: false
+        aks: all
+        enable.idempotence: true
 
 management:
   endpoints:

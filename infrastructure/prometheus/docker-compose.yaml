@@ -7,4 +7,4 @@ services:
       - "9090:9090"
 
     volumes:
-      - ${PWD}/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - /home/brian/dev/flight-ops-platform/infrastructure/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yml:ro

@@ -1,0 +1,20 @@
+{
+  "type": "record",
+  "name": "FlightOperationEvent",
+  "namespace": "com.flightops.contracts.avro",
+  "fields": [
+    { "name": "flightId", "type": "int" },
+    { "name": "operationType", "type": "string" },
+    { "name": "status", "type": ["null", "string"], "default": null },
+    { "name": "gate", "type": ["null", "string"], "default": null },
+    { "name": "delayMinutes", "type": ["null", "int"], "default": null },
+    { "name": "reason", "type": ["null", "string"], "default": null },
+    {
+      "name": "eventTime",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      }
+    }
+  ]
+}

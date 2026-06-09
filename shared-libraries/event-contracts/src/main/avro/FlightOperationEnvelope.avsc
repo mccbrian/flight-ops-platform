@@ -1,0 +1,19 @@
+{
+  "type": "record",
+  "name": "FlightOperationEnvelope",
+  "namespace": "com.flightops.contracts.avro",
+  "fields": [
+    { "name": "eventId", "type": "string" },
+    { "name": "eventType", "type": "string" },
+    { "name": "aggregateId", "type": "string" },
+    { "name": "correlationId", "type": "string" },
+    {
+      "name": "occurredAt",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      }
+    },
+    { "name": "payload", "type": "com.flightops.contracts.avro.FlightOperationEvent" }
+  ]
+}
