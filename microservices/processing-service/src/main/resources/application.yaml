@@ -8,11 +8,14 @@ spring:
   kafka:
     bootstrap-servers: ${KAFKA_HOST}:${KAFKA_PORT}
     consumer:
+      enable-auto-commit: false
       group-id: flight-ops-processing-group
       auto-offset-reset: earliest
-      enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: io.confluent.kafka.serializers.KafkaAvroDeserializer
+      properties:
+        schema.registry.url: ${SCHEMA_REGISTRY_URL}
+        specific.avro.reader: true
     listener:
       ack-mode: manual
     producer:
@@ -60,3 +63,13 @@ management:
   endpoint:
     health:
       show-details: always
+
+logging:
+  level:
+    org:
+      springframework:
+        jdbc:
+          core:
+            JdbcTemplate: DEBUG
+          transaction:
+            DataSourceTransactionManager: DEBUG

@@ -37,8 +37,8 @@ public class FailedEventRecoveryService {
     private final EventProcessingCoordinator coordinator;
 
     /**
-     * Attempts to recover a failed event by deserializing its raw JSON representation,
-     * logging relevant failure details, and reprocessing its payload.
+     * Attempts to recover a failed event by deserializing its raw JSON representation, logging relevant failure details,
+     * and reprocessing its payload.
      * <p>
      * The recovery process includes:
      * <ul>

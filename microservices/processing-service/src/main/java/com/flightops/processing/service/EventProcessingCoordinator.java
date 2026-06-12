@@ -9,7 +9,6 @@ import com.flightops.processing.metrics.FlightOperationMetrics;
 import com.flightops.processing.producer.FailureEventProducer;
 import com.flightops.processing.validation.ValidationError;
 import com.flightops.processing.validation.ValidationErrorType;
-import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -62,29 +61,27 @@ public class EventProcessingCoordinator {
     private int maxAttempts;
 
     /**
-     * Processes a raw event message by parsing it, validating it, enforcing dempotency checks, and delegating business
-     * processing to downstream services.
+     * Processes an event envelope through the standard flight operation processing workflow.
      * <p>
-     * If processing succeeds, the event is marked as processed in the idempotency store and success metrics are recorded.
+     * The event is first claimed through the idempotency service to prevent duplicate processing. If the event has
+     * already been claimed or processed, it is ignored and no further action is taken.
      * <p>
-     * If processing fails, the event may be routed to either a retry topic or a dead-letter queue (DLQ) depending on the
-     * type of failure, retry eligibility, and the current retry attempt count.
+     * Successfully claimed events are converted to a {@code FlightOperationEvent} and delegated to the
+     * {@code FlightOperationProcessingService} for business processing. Upon successful completion, the event is marked
+     * as processed in the idempotency store and success metrics are recorded.
      * <p>
-     * Duplicate or previously claimed events are detected through the idempotency service and are ignored without
-     * further processing.
+     * Validation failures and unexpected processing exceptions are classified and routed to either a retry topic or a
+     * dead-letter queue (DLQ) based on retry eligibility and the current attempt count. Processing metrics and latency
+     * measurements are recorded regardless of outcome.
      *
-     * @param rawMessage the raw event message received as a JSON string
-     * @param attemptCount the current processing attempt count for the event,
-     *                     starting at {@code 1} for initial ingestion and
-     *                     incremented for each retry attempt
+     * @param envelope the event envelope containing event metadata and payload
+     * @param attemptCount the current processing attempt count for the event, starting at {@code 1} for initial ingestion
+     *                     and incremented for each retry attempt
      */
-    public void processRawEvent(String rawMessage, int attemptCount) {
-        EventEnvelopeJson envelope = null;
+    public void processEnvelope(EventEnvelopeJson envelope, int attemptCount) {
         Timer.Sample sample = metrics.startProcessingTimer();
 
         try {
-            envelope = readEnvelope(rawMessage);
-
             if (!claimEvent(envelope)) {
                 return;
             }
@@ -95,30 +92,58 @@ public class EventProcessingCoordinator {
 
             idempotencyService.markProcessed(envelope.eventId());
 
-            log.info(
-                    "Event processed successfully. eventId={}, correlationId{}, aggregateId={}, flightId={}, operationType={}",
+            metrics.incrementProcessed();
+
+            log.info("event_processed eventId={}, correlationId={}, aggregateId={}, flightId={}, operationType={}",
                     envelope.eventId(),
                     envelope.correlationId(),
                     envelope.aggregateId(),
                     envelope.payload().flightId(),
-                    envelope.payload().operationType()
-            );
-
-            metrics.incrementProcessed();
+                    envelope.payload().operationType());
 
         } catch (FlightOperationValidationException exception) {
-            handleValidationFailure(envelope, rawMessage, attemptCount, exception);
+            handleValidationFailure(envelope, serializeEnvelope(envelope), attemptCount, exception);
 
         } catch (Exception exception) {
-            handleUnexpectedFailure(envelope, rawMessage, attemptCount, exception);
+            handleUnexpectedFailure(envelope, serializeEnvelope(envelope), attemptCount, exception);
+
         } finally {
             metrics.stopProcessingTimer(sample);
         }
     }
 
-    private EventEnvelopeJson readEnvelope(String rawMessage) {
+    /**
+     * Processes a raw event message by parsing it and delegating it through the standard event processing workflow,
+     * including idempotency checks, validation, business processing, metrics recording, and failure handling.
+     * <p>
+     * If processing succeeds, the event is marked as processed in the idempotency store and success metrics are recorded.
+     * <p>
+     * If processing fails, the event may be routed to either a retry topic or a dead-letter queue (DLQ) depending on the
+     * type of failure, retry eligibility, and the current retry attempt count.
+     * <p>
+     * Duplicate or previously claimed events are detected through the idempotency service and are ignored without
+     * further processing.
+     *
+     * @param rawMessage the raw event message received as a JSON string
+     * @param attemptCount the current processing attempt count for the event, starting at {@code 1} for initial ingestion
+     *                     and incremented for each retry attempt
+     */
+    public void processRawEvent(String rawMessage, int attemptCount) {
+        EventEnvelopeJson envelope = readEnvelope(rawMessage);
+        processEnvelope(envelope, attemptCount);
+    }
 
+    private EventEnvelopeJson readEnvelope(String rawMessage) {
         return objectMapper.readValue(rawMessage, EventEnvelopeJson.class);
+    }
+
+    private String serializeEnvelope(EventEnvelopeJson envelope) {
+        try {
+            return objectMapper.writeValueAsString(envelope);
+        } catch (Exception exception) {
+            log.error("Failed to serialize event envelope.", exception);
+            return "Failed to serialize event envelope.";
+        }
     }
 
     private boolean claimEvent(EventEnvelopeJson envelope) {
@@ -294,7 +319,8 @@ public class EventProcessingCoordinator {
     private Map<String, Object> safeMessageMap(String rawMessage) {
 
         try {
-            return objectMapper.readValue(rawMessage, new TypeReference<>() {});
+            return objectMapper.readValue(rawMessage, new TypeReference<>() {
+            });
 
         } catch (Exception exception) {
 
