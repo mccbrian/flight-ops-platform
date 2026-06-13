@@ -1,18 +1,19 @@
 package com.flightops.processing.component;
 
-import com.flightops.contracts.failure.FailedEvent;
+import com.flightops.contracts.avro.FailedEvent;
 import com.flightops.processing.dto.EventEnvelopeJson;
 import com.flightops.processing.exception.FlightOperationValidationException;
+import com.flightops.processing.idempotency.EventIdempotencyService;
 import com.flightops.processing.metrics.FlightOperationMetrics;
 import com.flightops.processing.producer.FailureEventProducer;
-import com.flightops.processing.validation.ValidationError;
 import com.flightops.processing.validation.ValidationErrorType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
+import java.util.Collections;
+import java.util.UUID;
 
 /**
  * Responsible for classifying and routing failed flight operation events to either retry or dead-letter processing channels.
@@ -34,6 +35,7 @@ public class FailureRouter {
     private final FlightOperationMetrics metrics;
     private final FailedEventFactory failedEventFactory;
     private final FailureEventProducer failureEventProducer;
+    private final EventIdempotencyService idempotencyService;
 
     @Value("${app.retry.max-attempts}")
     private int maxAttempts;
@@ -56,20 +58,17 @@ public class FailureRouter {
             return;
         }
 
-        boolean retryable = isRetryable(exception);
-        String classification = retryable ? "RETRYABLE" : "NON_RETRYABLE";
+        boolean classification = isRetryable(exception);
 
         FailedEvent failedEvent = failedEventFactory.buildFailedEvent(
                 envelope,
                 classification,
-                attemptCount,
-                exception.errors().stream()
-                        .map(ValidationError::code)
-                        .toList(),
-                exception
+                exception.errors(),
+                exception.getMessage(),
+                attemptCount
         );
 
-        routeFailedEvent(failedEvent, retryable, attemptCount, "Validation failure");
+        routeFailedEvent(failedEvent, classification, attemptCount, "Validation failure");
     }
 
     /**
@@ -95,16 +94,32 @@ public class FailureRouter {
 
         FailedEvent failedEvent = failedEventFactory.buildFailedEvent(
                 envelope,
-                "RETRYABLE",
-                attemptCount,
-                List.of("UNEXPECTED_PROCESSING_ERROR"),
-                exception
+                true,
+                Collections.emptyList(),
+                exception.getMessage(),
+                attemptCount
         );
 
         routeFailedEvent(failedEvent, true, attemptCount, "Unexpected processing failure");
     }
 
+    /**
+     * Routes a failed event to either the retry topic or the dead-letter queue (DLQ) based on the failure classification
+     * <p>
+     * <b>IMPORTANT:</b> Always release the idempotency claim before routing to retry or DLQ. If the claim is not released,
+     * Redis will block the retry consumer from reprocessing the event, causing the event to remain stuck in PROCESSING
+     * state indefinitely.
+     * <p>
+     * This release is required even for DLQ events because no further processing will occur.
+     * @param failedEvent the enriched failed event to be routed
+     * @param retryable whether the failure is eligible for retry
+     * @param attemptCount the current processing attempt count
+     * @param failureContext a human-readable description of the failure scenario for logging
+     */
     private void routeFailedEvent(FailedEvent failedEvent, boolean retryable, int attemptCount, String failureContext) {
+
+        UUID originalEventId = UUID.fromString(failedEvent.getOriginalEventId());
+        idempotencyService.releaseClaim(originalEventId);
 
         if (retryable && attemptCount < maxAttempts) {
             failureEventProducer.sendToRetry(failedEvent);
@@ -113,14 +128,13 @@ public class FailureRouter {
             log.warn(
                     "{} routed to retry topic. eventId={}, attemptCount={}, errorCodes={}",
                     failureContext,
-                    failedEvent.originalEventId(),
+                    failedEvent.getOriginalEventId(),
                     attemptCount,
-                    failedEvent.errorCodes()
+                    failedEvent.getErrorCodes()
             );
 
             return;
         }
-
         failureEventProducer.sendToDlq(failedEvent);
         metrics.incrementDlq();
         metrics.incrementFailed();
@@ -128,10 +142,10 @@ public class FailureRouter {
         log.warn(
                 "{} routed to DLQ. eventId={}, attemptCount={}, retryable={}, errorCodes={}",
                 failureContext,
-                failedEvent.originalEventId(),
+                failedEvent.getOriginalEventId(),
                 attemptCount,
                 retryable,
-                failedEvent.errorCodes()
+                failedEvent.getErrorCodes()
         );
     }
 

@@ -31,4 +31,5 @@ public interface FlightOperationMapper {
     default OperationType mapOperationType(String value) {
         return value == null ? null : OperationType.valueOf(value);
     }
+
 }
