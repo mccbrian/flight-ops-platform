@@ -84,7 +84,7 @@ public class FlightOperationIngestionService {
                 .setGate(request.gate())
                 .setDelayMinutes(request.delayMinutes())
                 .setReason(request.reason())
-                .setEventTime(Instant.now())
+                .setEventTime(request.eventTime())
                 .build();
 
         String eventId = UUID.randomUUID().toString();
