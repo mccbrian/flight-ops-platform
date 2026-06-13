@@ -19,17 +19,16 @@ spring:
     listener:
       ack-mode: manual
     producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: io.confluent.kafka.serializers.KafkaAvroSerializer
       properties:
-        acks: all
-        retries: 3
+        schema.registry.url: ${SCHEMA_REGISTRY_URL}
+        auto.register.schemas: true
+        aks: all
         enable.idempotence: true
-        max.in.flight.requests.per.connection: 5
         delivery.timeout.ms: 10000
         request.timeout.ms: 5000
         max.block.ms: 5000
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
-
   datasource:
     url: ${DATASOURCE_URL}
     username: ${DATASOURCE_USERNAME}

@@ -10,16 +10,15 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Validates {@link FlightOperationEvent} payloads against required field,
- * reference integrity, and operation-specific business rules.
- *
- * <p>The validator checks for the presence of mandatory attributes,
- * verifies that referenced flights exist, and enforces conditional
- * validation rules based on the {@link OperationType}.</p>
- *
- * <p>Validation failures are collected and returned as a
- * {@link ValidationResult} containing one or more {@link ValidationError}
- * instances.</p>
+ * Validates {@link FlightOperationEvent} payloads against required fields, reference integrity, and operation-specific
+ * business rules.
+ * <p>
+ * The validator checks for the presence of mandatory attributes, verifies that referenced flights exist, and enforces
+ * conditional validation rules based on the {@link OperationType}.
+ * <p>
+ * Validation failures are collected and returned as a {@link ValidationResult} containing one or more
+ * {@link ValidationError} instances. Each validation error includes a classification that can be used by downstream
+ * components to determine retry eligibility.
  */
 @Component
 @RequiredArgsConstructor
@@ -28,11 +27,12 @@ public class FlightOperationValidator {
     private final FlightReferenceRepository flightReferenceRepository;
 
     /**
-     * Validates the supplied flight operation event payload.
+     * Validates the supplied flight operation event and collects all detected validation failures rather than failing
+     * fast on the first violation.
      *
      * @param payload the flight operation event to validate
-     * @return a successful {@link ValidationResult} if validation passes;
-     *         otherwise a failure result containing one or more validation errors
+     * @return a successful {@link ValidationResult} when validation passes; otherwise a failure result containing all
+     * validation errors that were identified during evaluation
      */
     public ValidationResult validate(FlightOperationEvent payload) {
         List<ValidationError> errors = new ArrayList<>();

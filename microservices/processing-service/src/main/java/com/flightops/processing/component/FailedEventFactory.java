@@ -1,18 +1,17 @@
 package com.flightops.processing.component;
 
-import com.flightops.contracts.failure.FailedEvent;
+import com.flightops.contracts.avro.FailedEvent;
 import com.flightops.processing.dto.EventEnvelopeJson;
 import com.flightops.processing.idempotency.EventIdempotencyService;
+import com.flightops.processing.validation.ValidationError;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Factory responsible for constructing standardized {@link FailedEvent} payloads used for retry and dead-letter processing.
@@ -48,35 +47,39 @@ public class FailedEventFactory {
      *
      * @param envelope the original event envelope that failed to process
      * @param classification failure classification (e.g., RETRYABLE or NON_RETRYABLE)
-     * @param attemptCount the current processing attempt count
      * @param errors list of validation or processing error codes associated with the failure
-     * @param exception the exception that triggered the failure
+     * @param reason a human-readable description of the failure
+     * @param attemptCount the current processing attempt count
      * @return a fully constructed {@link FailedEvent} ready for routing
      */
     public FailedEvent buildFailedEvent(
             EventEnvelopeJson envelope,
-            String classification,
-            int attemptCount,
-            List<String> errors,
-            Exception exception
+            boolean classification,
+            List<ValidationError> errors,
+            String reason,
+            int attemptCount
     ) {
+        return FailedEvent.newBuilder()
+                .setOriginalEventId(envelope.eventId().toString())
+                .setOriginalEventType(envelope.eventType().name())
+                .setAggregateId(envelope.aggregateId())
+                .setCorrelationId(envelope.correlationId())
+                .setFailureType(classification ? "RETRYABLE" : "NON_RETRYABLE")
+                .setErrorCodes(errors.stream().map(ValidationError::code).toList())
+                .setReason(reason)
+                .setRawPayload(toRawEnvelopeJson(envelope))
+                .setAttemptCount(attemptCount)
+                .setMaxAttempts(maxAttempts)
+                .setFailedAt(Instant.now())
+                .build();
+    }
 
-        idempotencyService.releaseClaim(envelope.eventId());
-        Map<String, Object> payloadMap = objectMapper.convertValue(envelope.payload(), new TypeReference<>() {});
-
-        return new FailedEvent(
-                envelope.eventId(),
-                envelope.eventType().name(),
-                envelope.aggregateId(),
-                envelope.correlationId(),
-                classification,
-                errors,
-                exception.getMessage(),
-                payloadMap,
-                attemptCount,
-                maxAttempts,
-                Instant.now()
-        );
+    private String toRawEnvelopeJson(EventEnvelopeJson envelope) {
+        try {
+            return objectMapper.writeValueAsString(envelope);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Failed to serialize original event envelope", exception);
+        }
     }
 
 }
