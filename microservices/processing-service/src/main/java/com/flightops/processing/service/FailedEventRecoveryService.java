@@ -1,44 +1,37 @@
 package com.flightops.processing.service;
 
-import com.flightops.contracts.failure.FailedEvent;
+import com.flightops.contracts.avro.FailedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import tools.jackson.databind.ObjectMapper;
 
 /**
- * Service to handle the recovery of failed events. This service processes events
- * that previously failed to process and attempts recovery by re-submitting the
- * original payload for coordinated reprocessing with retry attempt tracking.
+ * Service responsible for recovering failed events by re-submitting them for processing with an incremented retry
+ * attempt count.
  * <p>
- * The recovery process involves:
- * <ol>
- *   <li>Converting a raw failed event JSON string into a {@code FailedEvent} object.</li>
- *   <li>Logging relevant details about the failed event, such as its original ID, failure type, and error codes.</li>
- *   <li>Extracting the original payload and calculating the next retry attempt count.</li>
- *   <li>Passing the payload and updated retry attempt count to the {@code EventProcessingCoordinator} for reprocessing.</li>
- *   <li>Handling and logging any exceptions that occur during the recovery attempt
- *    to avoid further disruption.</li>
- * </ol>
+ * This service acts as a thin orchestration layer that takes a previously failed event and delegates it back into
+ * the standard processing pipeline via {@link EventProcessingCoordinator}.
  * <p>
- * Dependencies:
+ * The recovery process:
  * <ul>
- *   <li>{@code ObjectMapper}: Used for JSON serialization/deserialization of the failed event.</li>
- *   <li>{@code EventProcessingCoordinator}: Responsible for processing the reprocessed event payload.</li>
+ *   <li>Calculates the next retry attempt count based on the failed event metadata</li>
+ *   <li>Logs recovery initiation details for observability</li>
+ *   <li>Re-submits the original raw payload for reprocessing</li>
  * </ul>
- * </p>
+ * No deserialization, mapping, or business logic is performed in this service; all processing is delegated to the
+ * standard event processing workflow.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class FailedEventRecoveryService {
 
-    private final ObjectMapper objectMapper;
     private final EventProcessingCoordinator coordinator;
 
     /**
-     * Attempts to recover a failed event by deserializing its raw JSON representation,
-     * logging relevant failure details, and reprocessing its payload.
+     * Attempts to recover a failed event by reprocessing its raw payload with an increment in the retry attempt count.
+     * The recovery process logs the details of the failed event and delegates the raw payload to the
+     * event processing coordinator.
      * <p>
      * The recovery process includes:
      * <ul>
@@ -49,29 +42,19 @@ public class FailedEventRecoveryService {
      *   <li>Passing the payload and updated retry attempt count to the {@code EventProcessingCoordinator} for reprocessing.</li>
      * </ul>
      *
-     * @param rawFailedEvent the raw JSON string representing the failed event to be recovered
+     * @param failedEvent the failed event to be recovered, containing details such as the original payload, aggregate ID,
+     *                    and the number of prior processing attempts
      */
-    public void recover(String rawFailedEvent) {
-        try {
-            FailedEvent failedEvent = objectMapper.readValue(rawFailedEvent, FailedEvent.class);
+    public void recover(FailedEvent failedEvent) {
+        int nextAttempt = failedEvent.getAttemptCount() + 1;
 
-            log.info("Recovering failed event. originalEventId={}, attemptCount={}, failureType={}, errorCodes={}",
-                    failedEvent.originalEventId(),
-                    failedEvent.attemptCount(),
-                    failedEvent.failureType(),
-                    failedEvent.errorCodes()
-            );
+        log.info("Recovering failed event. originalEventId={}, aggregateId={}, attemptCount={}, nextAttempt={}",
+                failedEvent.getOriginalEventId(),
+                failedEvent.getAggregateId(),
+                failedEvent.getAttemptCount(),
+                nextAttempt);
 
-            String originalEvent = objectMapper.writeValueAsString(failedEvent.payloadMap());
-
-            int nextAttempt = failedEvent.attemptCount() + 1;
-
-            coordinator.processRawEvent(originalEvent, nextAttempt);
-
-        } catch (Exception exception) {
-            log.error("Failed to recover failed event. rawFailedEvent={}", rawFailedEvent, exception);
-            throw exception;
-        }
+        coordinator.processRawEvent(failedEvent.getRawPayload(), nextAttempt);
     }
 
 }
