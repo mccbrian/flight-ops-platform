@@ -24,7 +24,7 @@ spring:
       properties:
         schema.registry.url: ${SCHEMA_REGISTRY_URL}
         auto.register.schemas: true
-        aks: all
+        acks: all
         enable.idempotence: true
         delivery.timeout.ms: 10000
         request.timeout.ms: 5000

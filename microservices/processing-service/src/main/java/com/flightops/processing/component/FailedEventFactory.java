@@ -30,7 +30,6 @@ import java.util.List;
 @RequiredArgsConstructor
 public class FailedEventFactory {
 
-    private final EventIdempotencyService idempotencyService;
     private final ObjectMapper objectMapper;
 
     @Value("${app.retry.max-attempts}")

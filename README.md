@@ -4,7 +4,7 @@
 
 Flight Ops Platform is a distributed flight operations processing platform designed around event-driven architecture, resilient asynchronous workflows, and operational correctness.
 
-The platform simulates the kinds of operational systems commonly found in large-scale airline and transportation environments, where high-volume operational events—such as flight delays, gate changes, cancellations, and status transitions—must be processed reliably, validated against authoritative relational data, and propagated safely across distributed services.
+The platform simulates the kinds of operational systems commonly found in large-scale airline and transportation environments, where high-volume operational events must be processed reliably, validated against authoritative relational data, and propagated safely across distributed services.
 
 Rather than focusing on CRUD-centric application design, this platform emphasizes:
 
@@ -14,7 +14,9 @@ Rather than focusing on CRUD-centric application design, this platform emphasize
 * durable processing guarantees
 * retry and dead-letter recovery
 * structured failure contracts
+* Avro-based schema governance
 * operational state management
+* metrics-ready observability
 * CQRS-oriented architectural direction
 
 The project evolved incrementally through real failure handling and iterative architectural refinement, intentionally mirroring how production systems mature under operational pressure.
@@ -32,6 +34,8 @@ The architecture prioritizes:
 * durable idempotency guarantees
 * failure classification and recovery
 * recoverable dead-letter contracts
+* schema-governed event contracts
+* retry attempt limits and failure escalation
 * operational observability readiness
 
 This repository intentionally avoids overly simplistic “happy path” examples in favor of production-shaped processing behavior.
@@ -54,6 +58,7 @@ This repository intentionally avoids overly simplistic “happy path” examples
 │ Event Backbone      │
 │ Retry Topics        │
 │ DLQ Topics          │
+│ Schema Registry     │
 └─────────┬───────────┘
           │
           ▼
@@ -66,6 +71,7 @@ This repository intentionally avoids overly simplistic “happy path” examples
 │ Persistence         │
 │ Retry Recovery      │
 │ Failure Routing     │
+│ Metrics             │
 └─────────┬───────────┘
           │
           ▼
@@ -103,6 +109,8 @@ The platform currently uses:
 * ingestion topic
 * retry topic
 * dead-letter topic
+* Avro schemas
+* Schema Registry
 
 Kafka is treated as more than transport infrastructure. The architecture is intentionally evolving toward:
 
@@ -111,6 +119,19 @@ Kafka is treated as more than transport infrastructure. The architecture is inte
 * resilient decoupling
 * operational tracing
 * durable event contracts
+* schema-governed producer/consumer compatibility
+
+## Schema Registry
+
+Schema Registry provides contract governance for Kafka messages exchanged between services.
+
+The platform currently uses Avro schemas for:
+
+* flight operation envelopes
+* flight operation payloads
+* failed event contracts
+
+This allows the platform to evolve beyond JVM-local serialization assumptions and toward explicit, versioned message contracts that can be validated across producers and consumers.
 
 ## Processing Service
 
@@ -125,7 +146,10 @@ Responsibilities include:
 * deep validation against relational data
 * operational state persistence
 * retry and DLQ routing
+* retry attempt tracking
 * failed event recovery
+* manual Kafka offset acknowledgment
+* Micrometer processing metrics
 
 The service intentionally separates:
 
@@ -134,6 +158,8 @@ The service intentionally separates:
 * business persistence concerns
 
 to maintain clearer operational boundaries.
+
+Processing orchestration is centralized through an `EventProcessingCoordinator`, while Kafka consumers remain thin transport adapters that delegate work to the shared processing flow.
 
 ## PostgreSQL
 
@@ -168,6 +194,21 @@ Responsibilities include:
 
 Redis is intentionally not treated as the durable source of truth. Durable correctness remains enforced by PostgreSQL.
 
+# Observability
+
+The platform includes metrics-ready observability through Spring Boot Actuator, Micrometer, Prometheus, and Grafana infrastructure.
+
+The Processing Service currently records metrics for:
+
+* successfully processed events
+* failed events
+* retry-routed events
+* DLQ-routed events
+* duplicate events
+* processing latency
+
+These metrics provide a foundation for future operational dashboards, alerting rules, and service-level monitoring.
+
 
 # Event Processing Flow
 
@@ -182,7 +223,9 @@ Kafka Event Publication
     ↓
 Processing Consumer
     ↓
-Controlled Parsing
+Manual Offset Control
+    ↓
+Controlled Avro Mapping
     ↓
 Claim-Based Idempotency
     ↓
@@ -191,6 +234,8 @@ Deep Validation
 Persistence
     ↓
 Mark Processed
+    ↓
+Acknowledge Offset
 ```
 
 Failures are classified and routed intentionally rather than being treated as generic exceptions.
@@ -200,9 +245,12 @@ Failures are classified and routed intentionally rather than being treated as ge
 
 One of the key architectural decisions in the platform is the use of controlled deserialization.
 
-Rather than relying on Kafka type headers or automatic generic deserialization, the Processing Service consumes raw JSON payloads and explicitly controls:
+Rather than relying on JVM-local type headers or implicit generic deserialization, the platform now uses Avro-backed contracts with Schema Registry while still explicitly controlling the internal processing flow.
 
-* envelope parsing
+The Processing Service controls:
+
+* Avro envelope mapping
+* internal event representation
 * payload conversion
 * validation sequencing
 * failure handling
@@ -214,7 +262,7 @@ This approach improves:
 * contract evolution
 * operational safety
 
-The design evolved directly from debugging real serialization and deserialization failures encountered during development.
+The design evolved directly from debugging real serialization and deserialization failures encountered during development, moving from raw JSON stabilization toward schema-governed Avro contracts.
 
 
 # Idempotency Strategy
@@ -265,12 +313,12 @@ Failures are routed to:
 * retry topics
 * dead-letter topics
 
-rather than being silently discarded.
+rather than being silently discarded. Retryable failures are bounded by a configured maximum attempt count before being escalated to the DLQ.
 
 
 # Structured Failure Contracts
 
-The platform uses structured `FailedEvent` contracts for retry and DLQ processing.
+The platform uses structured Avro `FailedEvent` contracts for retry and DLQ processing.
 
 Failure contracts preserve:
 
@@ -280,6 +328,8 @@ Failure contracts preserve:
 * validation codes
 * original payloads
 * failure timestamps
+* attempt counts
+* maximum retry thresholds
 
 This enables:
 
@@ -299,6 +349,8 @@ Failed retryable events are:
 * consumed separately
 * reconstructed from failure contracts
 * reprocessed through the standard orchestration path
+* retried with incremented attempt counts
+* escalated to DLQ after the configured retry threshold
 
 The architecture intentionally avoids consumer-to-consumer dependencies by centralizing orchestration through a dedicated coordinator.
 
@@ -338,10 +390,14 @@ Examples of future projection use cases:
 * Spring Kafka
 * Spring Data JDBC
 * Flyway
+* MapStruct
+* Micrometer
 
 ## Messaging
 
 * Apache Kafka (KRaft mode)
+* Avro
+* Schema Registry
 
 ## Data
 
@@ -352,11 +408,13 @@ Examples of future projection use cases:
 
 * Docker
 * Docker Compose
+* Prometheus
+* Grafana
 
 
 # Local Development
 
-## Start Kafka
+## Start Kafka and Schema Registry
 
 ```bash
 docker compose up -d
@@ -366,6 +424,12 @@ docker compose up -d
 
 ```bash
 docker compose up -d redis
+```
+
+## Start Observability Infrastructure
+
+```bash
+docker compose up -d
 ```
 
 ## Start Services
@@ -382,7 +446,9 @@ flight-ops-platform/
 │
 ├── infrastructure/
 │   ├── kafka/
-│   └── redis/
+│   ├── redis/
+│   ├── prometheus/
+│   └── grafana/
 │
 ├── microservices/
 │   ├── ingestion-service/
@@ -399,14 +465,13 @@ flight-ops-platform/
 
 The platform roadmap includes:
 
-* retry attempt tracking
 * exponential backoff
 * delayed retry scheduling
 * replay tooling
 * outbox pattern implementation
-* Avro and schema registry integration
+* schema compatibility testing
 * distributed tracing
-* metrics and observability
+* alerting rules and SLO-oriented dashboards
 * projection rebuild pipelines
 * stream processing
 * optimistic concurrency controls
@@ -421,8 +486,11 @@ This project intentionally emphasizes:
 * failure recovery
 * orchestration boundaries
 * event contract stability
+* reusable platform plumbing
 * resilient asynchronous processing
 
 over simplistic “happy path” implementations.
+
+A key architectural direction is that much of the platform plumbing is reusable across business domains. Once idempotency, retry/DLQ recovery, schema governance, and observability are established, new use cases should primarily require domain-specific validation and persistence logic rather than rebuilding the event-processing pipeline.
 
 The goal is to model how distributed operational systems evolve in production environments where failure handling, recoverability, and correctness are first-class concerns.
