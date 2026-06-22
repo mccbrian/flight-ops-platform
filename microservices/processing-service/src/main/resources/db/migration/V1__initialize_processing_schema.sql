@@ -28,9 +28,9 @@ CREATE SCHEMA if NOT EXISTS flight_operations;
 CREATE TABLE flight_operations.processed_events
 (
     event_id     uuid PRIMARY KEY,
-    event_type   text        NOT NULL,
-    aggregate_id text        NOT NULL,
-    processed_at timestamptz NOT NULL DEFAULT now()
+    event_type   TEXT        NOT NULL,
+    aggregate_id TEXT        NOT NULL,
+    processed_at timestamptz NOT NULL DEFAULT NOW()
 );
 
 
@@ -45,9 +45,13 @@ CREATE TABLE flight_operations.processed_events
 --
 -- Columns:
 --   flight_id     : Unique identifier of the flight.
+--   version       : Version number of the flight status.
+--   operation_type: Type of operation (e.g., BOARD, DEPART).
 --   status        : Current status (e.g., SCHEDULED, BOARDING, DELAYED).
 --   gate          : Assigned gate for the flight.
 --   delay_minutes : Delay duration in minutes.
+--   reason        : Reason for the delay (if applicable).
+--   last_event_time: Timestamp of the last event processed.
 --   updated_at    : Timestamp of the last update.
 --
 -- Notes:
@@ -56,9 +60,13 @@ CREATE TABLE flight_operations.processed_events
 -- - Designed for fast reads and operational queries.
 CREATE TABLE flight_operations.flight_operation_status
 (
-    flight_id     INTEGER PRIMARY KEY,
-    status        text,
-    gate          text,
-    delay_minutes INTEGER,
-    updated_at    timestamptz NOT NULL DEFAULT now()
+    flight_id       INTEGER PRIMARY KEY,
+    version         BIGINT,
+    operation_type  TEXT,
+    status          TEXT,
+    gate            TEXT,
+    delay_minutes   INTEGER,
+    reason          TEXT,
+    last_event_time timestamptz,
+    updated_at      timestamptz NOT NULL DEFAULT NOW()
 );

@@ -1,6 +1,6 @@
 package com.flightops.processing.service;
 
-import com.flightops.contracts.ingestion.FlightOperationEvent;
+import com.flightops.contracts.avro.FlightOperationEvent;
 import com.flightops.processing.component.FailureRouter;
 import com.flightops.processing.dto.EventEnvelopeJson;
 import com.flightops.processing.exception.FlightOperationValidationException;
@@ -74,9 +74,9 @@ public class EventProcessingCoordinator {
                 return;
             }
 
-            FlightOperationEvent payload = objectMapper.convertValue(envelope.payload(), FlightOperationEvent.class);
+            FlightOperationEvent event = objectMapper.convertValue(envelope.payload(), FlightOperationEvent.class);
 
-            processingService.process(envelope, payload);
+            processingService.process(envelope, event);
 
             idempotencyService.markProcessed(envelope.eventId());
 

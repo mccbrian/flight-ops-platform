@@ -1,6 +1,7 @@
 package com.flightops.processing.service;
 
-import com.flightops.contracts.ingestion.FlightOperationEvent;
+import com.flightops.contracts.avro.FlightOperationEvent;
+import com.flightops.processing.component.FlightOperationStatusUpdater;
 import com.flightops.processing.domain.FlightOperationStatus;
 import com.flightops.processing.domain.ProcessedEvent;
 import com.flightops.processing.dto.EventEnvelopeJson;
@@ -40,6 +41,7 @@ public class FlightOperationProcessingService {
     private final FlightOperationValidator validator;
     private final ProcessedEventRepository processedEventRepository;
     private final FlightOperationStatusRepository statusRepository;
+    private final FlightOperationStatusUpdater statusUpdater;
 
     /**
      * Processes a validated flight operation event and applies it to the domain model.
@@ -54,13 +56,13 @@ public class FlightOperationProcessingService {
      *   <li>Records the event in the processed event repository for idempotency</li>
      * </ul>
      * @param envelope metadata and identifiers for the event
-     * @param payload the validated flight operation event payload
+     * @param event the validated flight operation event payload
      * @throws FlightOperationValidationException if the payload fails, business validation rules
      */
     @Transactional
-    public void process(EventEnvelopeJson envelope, FlightOperationEvent payload) {
+    public void process(EventEnvelopeJson envelope, FlightOperationEvent event) {
 
-        ValidationResult result = validator.validate(payload);
+        ValidationResult result = validator.validate(event);
 
         if (!result.valid()) {
             throw new FlightOperationValidationException(envelope.eventId(), result.errors());
@@ -71,25 +73,21 @@ public class FlightOperationProcessingService {
             return;
         }
 
-        FlightOperationStatus status = statusRepository.findById(payload.flightId())
-                .map(existing -> {
-                    existing.update(payload.status(), payload.gate(), payload.delayMinutes());
-                    return existing;
-                })
-                .orElseGet(() -> new FlightOperationStatus(
-                        payload.flightId(),
-                        payload.status(),
-                        payload.gate(),
-                        payload.delayMinutes()
-                ));
+        FlightOperationStatus status = statusRepository.findById(event.getFlightId())
+                .orElseGet(() -> FlightOperationStatus.initialize(event.getFlightId()));
 
-        statusRepository.save(status);
+        boolean applied = statusUpdater.apply(status, event);
+
+        if (applied) {
+            statusRepository.save(status);
+        }
 
         processedEventRepository.save(new ProcessedEvent(
                 envelope.eventId(),
                 envelope.eventType().name(),
                 envelope.aggregateId()
         ));
+
     }
 
 }

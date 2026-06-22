@@ -5,6 +5,7 @@ import com.flightops.contracts.enums.OperationType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 
 import java.io.Serializable;
 import java.time.Instant;
@@ -68,7 +69,7 @@ public record FlightOperationRequest(
         @NotBlank(message = "Gate is required and cannot be blank")
         String gate,
         @NotNull(message = "Delay minutes is required")
-        @Positive(message = "Delay minutes must be a positive integer")
+        @PositiveOrZero(message = "Delay minutes must be a positive integer or zero")
         Integer delayMinutes,
         @NotBlank(message = "Reason is required and cannot be blank")
         String reason,
