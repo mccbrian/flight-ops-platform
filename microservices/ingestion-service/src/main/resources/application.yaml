@@ -16,7 +16,7 @@ spring:
         schema.registry.url: http://localhost:8085
         auto.register.schemas: true
         use.latest.version: false
-        aks: all
+        acks: all
         enable.idempotence: true
 
 management:

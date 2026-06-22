@@ -17,13 +17,15 @@ package com.flightops.contracts.enums;
  * <ul>
  *     <li>{@code DELAY} - Indicates a delay in the flight schedule.</li>
  *     <li>{@code GATE_CHANGE} - Represents a change in the assigned gate.</li>
- *     <li>{@code CANCELLED} - Denotes a cancellation of the flight.</li>
- *     <li>{@code RESCHEDULED} - Specifies that the flight has been rescheduled.</li>
+ *     <li>{@code DEPARTED} - Indicates that the flight has departed.</li>
+ *     <li>{@code CANCEL} - Denotes a cancellation of the flight.</li>
+ *     <li>{@code RESCHEDULE} - Specifies that the flight has been rescheduled.</li>
  * </ul>
  */
 public enum OperationType {
     DELAY,
     GATE_CHANGE,
-    CANCELLED,
-    RESCHEDULED;
+    DEPARTED,
+    CANCEL,
+    RESCHEDULE;
 }

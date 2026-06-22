@@ -1,10 +1,12 @@
 package com.flightops.processing.domain;
 
+import com.flightops.contracts.avro.FlightOperationEvent;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Transient;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.domain.Persistable;
 import org.springframework.data.relational.core.mapping.Table;
 
@@ -12,83 +14,76 @@ import java.time.Instant;
 import java.util.Objects;
 
 /**
- * Persistent aggregate representing the current operational state of a flight.
+ * Persistent projection representing the current operational state of a flight.
  * <p>
- * This entity stores the latest known state of a flight as maintained by the flight operation processing system. It
- * is updated in-place whenever a new flight operation event is processed.
+ * This entity acts as a materialized view of flight operations, maintained by applying
+ * incoming {@link FlightOperationEvent} instances in event-time order.
+ * It stores only the latest known state of a flight and is not an event log.
  * <p>
- * Each instance is uniquely identified by {@code flightId}, which serves as both the database primary key and the domain
- * identity of the flight.
- * <h2>
- * State management
- * <p>The entity is mutable by design. Updates are applied via the
- * {@link #update(String, String, Integer)} method, which modifies the existing
- * record rather than replacing it.
+ * Each instance is uniquely identified by {@code flightId}, which serves as both the
+ * database primary key and the domain identity of the flight.
+ *
+ * <h2>State management</h2>
+ * This entity is updated in-place using {@link #applySnapshot(FlightOperationEvent)}.
+ * Each incoming event replaces the previous state if it is newer than the last applied
+ * event.
  * <p>
- * Each update also refreshes {@code updatedAt} to reflect the last time the
- * flight state was modified.
- * <h2>
- * Persistence behavior
- * <p>This class implements {@link org.springframework.data.domain.Persistable}
- * to explicitly control insert vs. update behavior in Spring Data.
+ * The {@code lastEventTime} field is used to ensure events are applied in order and to
+ * prevent stale updates from overwriting newer state.
  * <p>
- * The {@code isNew} flag determines whether the entity should be inserted or
- * updated:
- * <ul>
- *   <li>{@code true} → entity is treated as new and will be inserted</li>
- *   <li>{@code false} → entity is treated as existing and will be updated</li>
- * </ul>
- * New instances created via the all-args constructor are marked as new.
- * After calling {@link #update(String, String, Integer)}, the entity is
- * considered existing.</p>
- * <h2>
- * Equality
- * <p>
- * Equality and hash code are based solely on {@code flightId}, as this is
- * the stable business identity of the flight.
+ * Every update also refreshes {@code updatedAt}, which represents the last time the
+ * projection was modified.
+ *
+ * <h2>Concurrency</h2>
+ * The {@code version} field is used by Spring Data JDBC for optimistic locking.
+ * Concurrent modifications to the same flight status will result in an optimistic
+ * locking failure rather than silently overwriting changes.
+ *
+ * <h2>Equality</h2>
+ * Equality and hash code are based solely on {@code flightId}, which is the stable
+ * business identifier of the flight.
  */
 @Getter
 @Setter
 @NoArgsConstructor
 @Table("flight_operation_status")
-public class FlightOperationStatus implements Persistable<Integer> {
+public class FlightOperationStatus {
 
     @Id
     private Integer flightId;
 
+    @Version
+    private Long version;
+
+    private String operationType;
     private String status;
     private String gate;
     private Integer delayMinutes;
+    private String reason;
+    private Instant lastEventTime;
     private Instant updatedAt;
 
-    @Transient
-    private boolean isNew;
+    public static FlightOperationStatus initialize(Integer flightId) {
+        FlightOperationStatus status = new FlightOperationStatus();
+        status.flightId = flightId;
+        status.updatedAt = Instant.now();
+        return status;
+    }
 
-    public FlightOperationStatus(Integer flightId, String status, String gate, Integer delayMinutes) {
-        this.flightId = flightId;
-        this.status = status;
-        this.gate = gate;
-        this.delayMinutes = delayMinutes;
+    public boolean hasNewerOrSameEventThan(Instant eventTime) {
+        return this.lastEventTime != null
+                && eventTime != null
+                && this.lastEventTime.isBefore(eventTime);
+    }
+
+    public void applySnapshot(FlightOperationEvent event) {
+        this.operationType = event.getOperationType();
+        this.status = event.getStatus();
+        this.gate = event.getGate();
+        this.delayMinutes = event.getDelayMinutes();
+        this.reason = event.getReason();
+        this.lastEventTime = event.getEventTime();
         this.updatedAt = Instant.now();
-        this.isNew = true;
-    }
-
-    public void update(String status, String gate, Integer delayMinutes) {
-        this.status = status;
-        this.gate = gate;
-        this.delayMinutes = delayMinutes;
-        this.updatedAt = Instant.now();
-        this.isNew = false;
-    }
-
-    @Override
-    public Integer getId() {
-        return flightId;
-    }
-
-    @Override
-    public boolean isNew() {
-        return isNew;
     }
 
     @Override
