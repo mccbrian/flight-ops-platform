@@ -7,6 +7,7 @@ import com.flightops.processing.idempotency.EventIdempotencyService;
 import com.flightops.processing.metrics.FlightOperationMetrics;
 import com.flightops.processing.producer.FailureEventProducer;
 import com.flightops.processing.validation.ValidationErrorType;
+import io.micrometer.observation.annotation.Observed;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,6 +51,11 @@ public class FailureRouter {
      * @param attemptCount the current processing attempt count for the event
      * @param exception the validation exception containing error details and validation error codes
      */
+    @Observed(
+            name = "flight.operation.failure.route",
+            contextualName = "route flight operation failure",
+            lowCardinalityKeyValues = {"component", "processing-service"}
+    )
     public void routeValidationFailure(EventEnvelopeJson envelope, int attemptCount, FlightOperationValidationException exception) {
 
         if (envelope == null) {
@@ -84,6 +90,11 @@ public class FailureRouter {
      * @param attemptCount the current processing attempt count for the event
      * @param exception the unexpected exception that occurred during processing
      */
+    @Observed(
+            name = "flight.operation.failure.unexpected",
+            contextualName = "route unexpected flight operation failure",
+            lowCardinalityKeyValues = {"component", "processing-service"}
+    )
     public void handleUnexpectedFailure(EventEnvelopeJson envelope, int attemptCount, Exception exception) {
 
         if (envelope == null) {

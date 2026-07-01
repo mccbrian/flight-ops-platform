@@ -49,6 +49,12 @@ public class FlightOperationConsumer {
     )
     public void consume(FlightOperationEnvelope avroEnvelope, Acknowledgment acknowledgment) {
         try {
+            log.info(
+                    "flight_operation_received eventId={}, correlationId={}, aggregateId={}",
+                    avroEnvelope.getEventId(),
+                    avroEnvelope.getCorrelationId(),
+                    avroEnvelope.getAggregateId()
+            );
             EventEnvelopeJson envelope = mapper.toEventEnvelopeJson(avroEnvelope);
             coordinator.processEnvelope(envelope, 1);
             acknowledgment.acknowledge();

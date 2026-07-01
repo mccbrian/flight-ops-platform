@@ -1,9 +1,13 @@
 package com.flightops.ingestion.producer;
 
 import com.flightops.contracts.avro.FlightOperationEnvelope;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
+
+import java.nio.charset.StandardCharsets;
 
 /**
  * Kafka producer responsible for publishing flight operation events to the
@@ -29,6 +33,7 @@ import org.springframework.stereotype.Component;
  * event-driven workflows.
  * </p>
  */
+@Slf4j
 @Component
 public class FlightOperationProducer {
 
@@ -56,7 +61,28 @@ public class FlightOperationProducer {
      *                 event metadata to be published; must not be {@code null}
      */
     public void publish(FlightOperationEnvelope envelope) {
-        kafkaTemplate.send(topic, envelope.getAggregateId(), envelope);
+        log.info(
+                "flight_operation_publish_requested eventId={}, correlationId={}, aggregateId={}, topic={}",
+                envelope.getEventId(),
+                envelope.getCorrelationId(),
+                envelope.getAggregateId(),
+                topic
+        );
+
+        ProducerRecord<String, FlightOperationEnvelope> record =
+                new ProducerRecord<>(topic, envelope.getAggregateId(), envelope);
+
+        record.headers().add(
+                "X-Correlation-Id",
+                envelope.getCorrelationId().getBytes(StandardCharsets.UTF_8)
+        );
+
+        record.headers().add(
+                "X-Event-Id",
+                envelope.getEventId().getBytes(StandardCharsets.UTF_8)
+        );
+
+        kafkaTemplate.send(record);
     }
 
 }
