@@ -40,6 +40,13 @@ public class FlightOperationRetryConsumer {
     )
     public void consumeRetry(FailedEvent failedEvent, Acknowledgment acknowledgment) {
         try {
+            log.info(
+                    "failed_event_received originalEventId={}, correlationId={}, aggregateId={}, attemptCount={}",
+                    failedEvent.getOriginalEventId(),
+                    failedEvent.getCorrelationId(),
+                    failedEvent.getAggregateId(),
+                    failedEvent.getAttemptCount()
+            );
             recoveryService.recover(failedEvent);
             acknowledgment.acknowledge();
             log.info("Kafka offset acknowledged for retry event. originalEventId={}, aggregateId={}, attemptCount={}",

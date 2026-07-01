@@ -7,8 +7,10 @@ import com.flightops.processing.exception.FlightOperationValidationException;
 import com.flightops.processing.idempotency.EventIdempotencyService;
 import com.flightops.processing.metrics.FlightOperationMetrics;
 import io.micrometer.core.instrument.Timer;
+import io.micrometer.observation.annotation.Observed;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
@@ -66,8 +68,17 @@ public class EventProcessingCoordinator {
      * @param attemptCount the current processing attempt count for the event, starting at {@code 1} for initial ingestion
      *                     and incremented for each retry attempt
      */
+    @Observed(
+            name = "flight.operation.process",
+            contextualName = "process flight operation",
+            lowCardinalityKeyValues = {"component", "processing-service"}
+    )
     public void processEnvelope(EventEnvelopeJson envelope, int attemptCount) {
         Timer.Sample sample = metrics.startProcessingTimer();
+
+        MDC.put("eventId", envelope.eventId().toString());
+        MDC.put("correlationId", envelope.correlationId());
+        MDC.put("aggregateId", envelope.aggregateId());
 
         try {
             if (!claimEvent(envelope)) {
@@ -96,6 +107,10 @@ public class EventProcessingCoordinator {
             failureRouter.handleUnexpectedFailure(envelope, attemptCount, exception);
 
         } finally {
+            MDC.remove("eventId");
+            MDC.remove("correlationId");
+            MDC.remove("aggregateId");
+
             metrics.stopProcessingTimer(sample);
         }
     }
@@ -116,6 +131,11 @@ public class EventProcessingCoordinator {
      * @param attemptCount the current processing attempt count for the event, starting at {@code 1} for initial ingestion
      *                     and incremented for each retry attempt
      */
+    @Observed(
+            name = "flight.operation.replay",
+            contextualName = "replay failed flight operation",
+            lowCardinalityKeyValues = {"component", "processing-service"}
+    )
     public void processRawEvent(String rawMessage, int attemptCount) {
         EventEnvelopeJson envelope = readEnvelope(rawMessage);
         processEnvelope(envelope, attemptCount);

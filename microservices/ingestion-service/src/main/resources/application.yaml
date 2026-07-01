@@ -4,14 +4,11 @@ server:
 spring:
   application:
     name: ingestion-service
-
   kafka:
     bootstrap-servers: localhost:9092
-
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: io.confluent.kafka.serializers.KafkaAvroSerializer
-
       properties:
         schema.registry.url: http://localhost:8085
         auto.register.schemas: true
@@ -27,6 +24,17 @@ management:
   endpoint:
     health:
       show-details: always
+  tracing:
+    sampling:
+      probability: 1.0
+    export:
+      zipkin:
+        endpoint: http://localhost:9411/api/v2/spans
+
+logging:
+  pattern:
+    correlation: "[${spring.application.name:},trace=%X{traceId:-},span=%X{spanId:-},corr=%X{correlationId:-}] "
+  include-application-name: false
 
 app:
   kafka:
