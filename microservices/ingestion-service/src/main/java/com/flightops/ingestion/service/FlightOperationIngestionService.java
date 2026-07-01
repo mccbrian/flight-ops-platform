@@ -5,6 +5,8 @@ import com.flightops.contracts.avro.FlightOperationEvent;
 import com.flightops.ingestion.dto.FlightOperationRequest;
 import com.flightops.ingestion.producer.FlightOperationProducer;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -39,6 +41,7 @@ import java.util.UUID;
  * operational updates, notifications, analytics, and audit workflows.
  * </p>
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class FlightOperationIngestionService {
@@ -88,7 +91,7 @@ public class FlightOperationIngestionService {
                 .build();
 
         String eventId = UUID.randomUUID().toString();
-        String correlationId = UUID.randomUUID().toString();
+        String correlationId = currentCorrelationId();
 
         FlightOperationEnvelope envelope = FlightOperationEnvelope.newBuilder()
                 .setEventId(eventId)
@@ -99,7 +102,23 @@ public class FlightOperationIngestionService {
                 .setPayload(payload)
                 .build();
 
+        log.info(
+                "flight_operation_ingested eventId={}, correlationId={}, aggregateId={}, operationType={}, eventTime={}",
+                eventId,
+                correlationId,
+                request.flightId(),
+                request.operationType(),
+                request.eventTime()
+        );
+
         producer.publish(envelope);
+    }
+
+    private String currentCorrelationId() {
+        String correlationId = MDC.get("correlationId");
+        return correlationId == null || correlationId.isBlank()
+                ? UUID.randomUUID().toString()
+                : correlationId;
     }
 
 }
