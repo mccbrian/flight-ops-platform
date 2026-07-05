@@ -3,6 +3,7 @@ package com.flightops.processing.service;
 import com.flightops.contracts.avro.FlightOperationEvent;
 import com.flightops.processing.component.FailureRouter;
 import com.flightops.processing.dto.EventEnvelopeJson;
+import com.flightops.processing.exception.EventParsingException;
 import com.flightops.processing.exception.FlightOperationValidationException;
 import com.flightops.processing.idempotency.EventIdempotencyService;
 import com.flightops.processing.metrics.FlightOperationMetrics;
@@ -142,7 +143,11 @@ public class EventProcessingCoordinator {
     }
 
     private EventEnvelopeJson readEnvelope(String rawMessage) {
-        return objectMapper.readValue(rawMessage, EventEnvelopeJson.class);
+        try {
+            return objectMapper.readValue(rawMessage, EventEnvelopeJson.class);
+        } catch (Exception exception) {
+            throw new EventParsingException("Failed to parse event envelope", exception);
+        }
     }
 
     private boolean claimEvent(EventEnvelopeJson envelope) {

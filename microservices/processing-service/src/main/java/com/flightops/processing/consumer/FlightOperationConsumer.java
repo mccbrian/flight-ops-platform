@@ -2,6 +2,7 @@ package com.flightops.processing.consumer;
 
 import com.flightops.contracts.avro.FlightOperationEnvelope;
 import com.flightops.processing.dto.EventEnvelopeJson;
+import com.flightops.processing.exception.ProcessingExceptionHandler;
 import com.flightops.processing.mapper.FlightOperationMapper;
 import com.flightops.processing.service.EventProcessingCoordinator;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ public class FlightOperationConsumer {
 
     private final FlightOperationMapper mapper;
     private final EventProcessingCoordinator coordinator;
+    private final ProcessingExceptionHandler processingExceptionHandler;
 
     /**
      * Consumes a flight operation event from the ingestion topic, maps the incoming Avro envelope to the internal event
@@ -55,14 +57,27 @@ public class FlightOperationConsumer {
                     avroEnvelope.getCorrelationId(),
                     avroEnvelope.getAggregateId()
             );
+
             EventEnvelopeJson envelope = mapper.toEventEnvelopeJson(avroEnvelope);
+
             coordinator.processEnvelope(envelope, 1);
+
             acknowledgment.acknowledge();
-            log.info("Kafka offset acknowledged for event: {}", envelope.eventId());
+
+            log.info("Kafka offset acknowledged for eventId={} correlationId={} aggregateId={}",
+                    avroEnvelope.getEventId(),
+                    avroEnvelope.getCorrelationId(),
+                    avroEnvelope.getAggregateId()
+            );
+
         } catch (Exception exception) {
-            log.error("Failed to process event; offset will not be acknowledged. Event: {}",
-                    avroEnvelope == null ? null : avroEnvelope.getEventId(),
-                    exception);
+            processingExceptionHandler.handleConsumerException(
+                    "flight-ops.ingestion.v1",
+                    avroEnvelope.getEventId(),
+                    avroEnvelope.getCorrelationId(),
+                    avroEnvelope.getAggregateId(),
+                    exception
+            );
 
             throw exception;
         }
