@@ -16,7 +16,7 @@ Rather than focusing on CRUD-centric application design, this platform emphasize
 * structured failure contracts
 * Avro-based schema governance
 * operational state management
-* metrics-ready observability
+* metrics and tracing observability
 * CQRS-oriented architectural direction
 
 The project evolved incrementally through real failure handling and iterative architectural refinement, intentionally mirroring how production systems mature under operational pressure.
@@ -71,7 +71,7 @@ This repository intentionally avoids overly simplistic “happy path” examples
 │ Persistence         │
 │ Retry Recovery      │
 │ Failure Routing     │
-│ Metrics             │
+│ Metrics + Tracing   │
 └─────────┬───────────┘
           │
           ▼
@@ -95,7 +95,7 @@ Responsibilities include:
 * accepting operational requests via REST
 * lightweight request validation
 * generating event metadata
-* creating correlation identifiers
+* propagating correlation identifiers through HTTP responses, logging context, and Kafka headers
 * publishing events to Kafka
 
 The service intentionally does **not** perform business persistence. This keeps ingestion fast, stateless, and horizontally scalable.
@@ -145,11 +145,13 @@ Responsibilities include:
 * PostgreSQL-backed durable idempotency
 * deep validation against relational data
 * operational state persistence
+* event-time ordering to prevent stale updates from overwriting newer state
 * retry and DLQ routing
 * retry attempt tracking
 * failed event recovery
 * manual Kafka offset acknowledgment
 * Micrometer processing metrics
+* correlation-aware logging and tracing context
 
 The service intentionally separates:
 
@@ -196,7 +198,9 @@ Redis is intentionally not treated as the durable source of truth. Durable corre
 
 # Observability
 
-The platform includes metrics-ready observability through Spring Boot Actuator, Micrometer, Prometheus, and Grafana infrastructure.
+The platform includes observability support through Spring Boot Actuator, Micrometer, Prometheus, Grafana, and Zipkin infrastructure.
+
+Both services expose Actuator endpoints and tracing configuration. The Ingestion Service propagates correlation identifiers through request/response handling and Kafka headers, while the Processing Service enriches logs with event, aggregate, correlation, trace, and span context.
 
 The Processing Service currently records metrics for:
 
@@ -207,7 +211,7 @@ The Processing Service currently records metrics for:
 * duplicate events
 * processing latency
 
-These metrics provide a foundation for future operational dashboards, alerting rules, and service-level monitoring.
+These metrics provide a foundation for future operational dashboards, alerting rules, service-level monitoring, and trace-aware failure investigation.
 
 
 # Event Processing Flow
@@ -366,6 +370,7 @@ Current architectural direction includes:
 * normalized operational persistence
 * authoritative validation
 * transactional consistency
+* event-time ordering to prevent stale updates
 
 ## Read Side
 
@@ -410,6 +415,7 @@ Examples of future projection use cases:
 * Docker Compose
 * Prometheus
 * Grafana
+* Zipkin
 
 
 # Local Development
@@ -429,12 +435,18 @@ docker compose up -d redis
 ## Start Observability Infrastructure
 
 ```bash
-docker compose up -d
+docker compose up -d prometheus
+docker compose up -d grafana
+docker compose up -d zipkin
 ```
 
 ## Start Services
 
 ```bash
+cd microservices/ingestion-service
+./mvnw spring-boot:run
+
+cd ../processing-service
 ./mvnw spring-boot:run
 ```
 
@@ -448,7 +460,8 @@ flight-ops-platform/
 │   ├── kafka/
 │   ├── redis/
 │   ├── prometheus/
-│   └── grafana/
+│   ├── grafana/
+│   └── zipkin/
 │
 ├── microservices/
 │   ├── ingestion-service/
@@ -470,7 +483,7 @@ The platform roadmap includes:
 * replay tooling
 * outbox pattern implementation
 * schema compatibility testing
-* distributed tracing
+* trace enrichment and distributed trace dashboards
 * alerting rules and SLO-oriented dashboards
 * projection rebuild pipelines
 * stream processing
