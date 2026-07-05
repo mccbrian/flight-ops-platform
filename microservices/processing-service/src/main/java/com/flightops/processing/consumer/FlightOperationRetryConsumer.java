@@ -1,6 +1,7 @@
 package com.flightops.processing.consumer;
 
 import com.flightops.contracts.avro.FailedEvent;
+import com.flightops.processing.exception.ProcessingExceptionHandler;
 import com.flightops.processing.service.FailedEventRecoveryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Component;
 public class FlightOperationRetryConsumer {
 
     private final FailedEventRecoveryService recoveryService;
+    private final ProcessingExceptionHandler processingExceptionHandler;
 
     /**
      * Consumes a message from the retry Kafka topic and attempts to recover the failed event.
@@ -47,16 +49,25 @@ public class FlightOperationRetryConsumer {
                     failedEvent.getAggregateId(),
                     failedEvent.getAttemptCount()
             );
+
             recoveryService.recover(failedEvent);
+
             acknowledgment.acknowledge();
+
             log.info("Kafka offset acknowledged for retry event. originalEventId={}, aggregateId={}, attemptCount={}",
                     failedEvent.getOriginalEventId(),
                     failedEvent.getAggregateId(),
-                    failedEvent.getAttemptCount());
+                    failedEvent.getAttemptCount()
+            );
+
         } catch (Exception exception) {
-            log.error("Failed to recover retry event. Offset will not be acknowledged. originalEventId={}",
+            processingExceptionHandler.handleConsumerException(
+                    "flight-ops.ingestion.retry.v1",
                     failedEvent == null ? null : failedEvent.getOriginalEventId(),
-                    exception);
+                    failedEvent == null ? null : failedEvent.getCorrelationId(),
+                    failedEvent == null ? null : failedEvent.getAggregateId(),
+                    exception
+            );
 
             throw exception;
         }
