@@ -1,13 +1,16 @@
 package com.flightops.ingestion.producer;
 
 import com.flightops.contracts.avro.FlightOperationEnvelope;
+import com.flightops.ingestion.exception.EventPublishException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Kafka producer responsible for publishing flight operation events to the
@@ -61,28 +64,38 @@ public class FlightOperationProducer {
      *                 event metadata to be published; must not be {@code null}
      */
     public void publish(FlightOperationEnvelope envelope) {
-        log.info(
-                "flight_operation_publish_requested eventId={}, correlationId={}, aggregateId={}, topic={}",
-                envelope.getEventId(),
-                envelope.getCorrelationId(),
-                envelope.getAggregateId(),
-                topic
-        );
+        try {
 
-        ProducerRecord<String, FlightOperationEnvelope> record =
-                new ProducerRecord<>(topic, envelope.getAggregateId(), envelope);
+            ProducerRecord<String, FlightOperationEnvelope> record =
+                    new ProducerRecord<>(topic, envelope.getAggregateId(), envelope);
 
-        record.headers().add(
-                "X-Correlation-Id",
-                envelope.getCorrelationId().getBytes(StandardCharsets.UTF_8)
-        );
+            record.headers().add(
+                    "X-Correlation-Id",
+                    envelope.getCorrelationId().getBytes(StandardCharsets.UTF_8)
+            );
 
-        record.headers().add(
-                "X-Event-Id",
-                envelope.getEventId().getBytes(StandardCharsets.UTF_8)
-        );
+            record.headers().add(
+                    "X-Event-Id",
+                    envelope.getEventId().getBytes(StandardCharsets.UTF_8)
+            );
 
-        kafkaTemplate.send(record);
+            SendResult<String, FlightOperationEnvelope> result = kafkaTemplate
+                    .send(record)
+                    .get(10, TimeUnit.SECONDS);
+
+            log.info(
+                    "flight_operation_published eventId={}, correlationId={}, aggregateId={}, topic={}, partition={}, offset={}",
+                    envelope.getEventId(),
+                    envelope.getCorrelationId(),
+                    envelope.getAggregateId(),
+                    topic,
+                    result.getRecordMetadata().partition(),
+                    result.getRecordMetadata().offset()
+            );
+
+        } catch (Exception exception) {
+            throw new EventPublishException("Failed to publish flight operation event ID=" + envelope.getEventId(), exception);
+        }
     }
 
 }

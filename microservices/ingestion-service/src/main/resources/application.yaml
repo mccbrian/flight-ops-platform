@@ -15,6 +15,9 @@ spring:
         use.latest.version: false
         acks: all
         enable.idempotence: true
+        delivery.timeout.ms: 10000
+        request.timeout.ms: 5000
+        max.block.ms: 5000
 
 management:
   endpoints:

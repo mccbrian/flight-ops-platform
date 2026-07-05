@@ -73,7 +73,7 @@ public class FlightOperationStatus {
     public boolean hasNewerOrSameEventThan(Instant eventTime) {
         return this.lastEventTime != null
                 && eventTime != null
-                && this.lastEventTime.isBefore(eventTime);
+                && !this.lastEventTime.isBefore(eventTime);
     }
 
     public void applySnapshot(FlightOperationEvent event) {
