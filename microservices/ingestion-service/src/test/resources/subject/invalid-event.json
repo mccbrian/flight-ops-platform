@@ -1,0 +1,9 @@
+{
+  "flightId": 12345,
+  "operationType": "DELAY",
+  "status": "",
+  "gate": "A12",
+  "delayMinutes": 30,
+  "reason": "WEATHER",
+  "eventTime": "2026-07-05T14:00:00Z"
+}

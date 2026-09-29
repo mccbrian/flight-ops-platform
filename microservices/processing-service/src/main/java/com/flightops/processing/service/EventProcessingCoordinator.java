@@ -150,6 +150,15 @@ public class EventProcessingCoordinator {
         }
     }
 
+    /**
+     * Attempts to claim the event for processing to ensure idempotency.
+     * If the event has already been claimed or processed, it logs the details and increments the duplicate event metric.
+     *
+     * @param envelope the event envelope containing event details such as event ID, correlation ID, aggregate ID,
+     *                 and payload including flight information and operation type
+     * @return {@code true} if the event was successfully claimed for processing,
+     *         {@code false} if the event was already claimed or processed
+     */
     private boolean claimEvent(EventEnvelopeJson envelope) {
         if (!idempotencyService.claimForProcessing(envelope.eventId())) {
 
