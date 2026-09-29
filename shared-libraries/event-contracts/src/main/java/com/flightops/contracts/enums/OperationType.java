@@ -15,6 +15,7 @@ package com.flightops.contracts.enums;
  * <p>
  * The available operation types are:
  * <ul>
+ *     <li>{@code ARRIVAL} - Represents the arrival of the flight.</li>
  *     <li>{@code DELAY} - Indicates a delay in the flight schedule.</li>
  *     <li>{@code GATE_CHANGE} - Represents a change in the assigned gate.</li>
  *     <li>{@code DEPARTED} - Indicates that the flight has departed.</li>
@@ -23,6 +24,7 @@ package com.flightops.contracts.enums;
  * </ul>
  */
 public enum OperationType {
+    ARRIVAL,
     DELAY,
     GATE_CHANGE,
     DEPARTED,

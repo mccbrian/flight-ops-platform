@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.concurrent.CompletableFuture;
+
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/flight-operations")
 @RestController
@@ -38,8 +40,8 @@ public class FlightOperationController {
     })
     @PostMapping
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public void ingest(@Valid @RequestBody FlightOperationRequest request) {
-        service.ingest(request);
+    public CompletableFuture<ResponseEntity<Void>> ingest(@Valid @RequestBody FlightOperationRequest request) {
+        return service.ingest(request).thenApply(ignored -> ResponseEntity.accepted().build());
     }
 
 }

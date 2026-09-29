@@ -3,6 +3,7 @@ package com.flightops.ingestion.service;
 import com.flightops.contracts.avro.FlightOperationEnvelope;
 import com.flightops.contracts.avro.FlightOperationEvent;
 import com.flightops.ingestion.dto.FlightOperationRequest;
+import com.flightops.ingestion.exception.EventPublishException;
 import com.flightops.ingestion.producer.FlightOperationProducer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Service responsible for ingesting flight operation requests and publishing
@@ -56,11 +58,8 @@ public class FlightOperationIngestionService {
      * details of the flight operation. The event is then wrapped inside a
      * {@link FlightOperationEnvelope} containing metadata used for event
      * routing, correlation, observability, and traceability.
-     * </p>
-     *
      * <p>
      * During processing, the method:
-     * </p>
      * <ul>
      *     <li>Captures the current timestamp for the event payload.</li>
      *     <li>Generates a unique event identifier.</li>
@@ -68,18 +67,28 @@ public class FlightOperationIngestionService {
      *     <li>Creates a standardized event envelope.</li>
      *     <li>Publishes the resulting event through the configured producer.</li>
      * </ul>
-     *
-     * <p>
      * The resulting event can be consumed by downstream systems to react to
      * operational flight changes such as delays, gate updates, cancellations,
      * status transitions, or other operational activities.
-     * </p>
      *
      * @param request the incoming flight operation request containing the
      *                flight identifier and operation details to be published
      *                as an event; must not be {@code null}
      */
-    public void ingest(FlightOperationRequest request) {
+    public CompletableFuture<Void> ingest(FlightOperationRequest request) {
+        FlightOperationEnvelope envelope = buildEnvelope(request);
+
+        return producer.publish(envelope)
+                .thenAccept(result -> {})
+                .exceptionally(exception -> {
+                    throw new EventPublishException(
+                            "Failed to publish flight operation eventId=" + envelope.getEventId(),
+                            exception
+                    );
+                });
+    }
+
+    private FlightOperationEnvelope buildEnvelope(FlightOperationRequest request) {
         FlightOperationEvent payload = FlightOperationEvent.newBuilder()
                 .setFlightId(request.flightId())
                 .setOperationType(request.operationType().name())
@@ -110,8 +119,7 @@ public class FlightOperationIngestionService {
                 request.operationType(),
                 request.eventTime()
         );
-
-        producer.publish(envelope);
+        return envelope;
     }
 
     private String currentCorrelationId() {
