@@ -45,10 +45,7 @@ public class FlightOperationConsumer {
      * @param avroEnvelope the deserialized Avro flight operation event received from Kafka
      * @param acknowledgment the acknowledgment handle used for manual offset commits after successful processing
      */
-    @KafkaListener(
-            topics = "${app.kafka.topics.ingestion}",
-            groupId = "flight-ops-processing-group"
-    )
+    @KafkaListener(topics = "${app.kafka.topics.ingestion}", groupId = "flight-ops-processing-group")
     public void consume(FlightOperationEnvelope avroEnvelope, Acknowledgment acknowledgment) {
         try {
             log.info(

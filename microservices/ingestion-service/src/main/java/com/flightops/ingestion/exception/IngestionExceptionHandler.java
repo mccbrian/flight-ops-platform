@@ -30,10 +30,7 @@ import java.util.List;
 public class IngestionExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiErrorResponse> handleValidationException(
-            MethodArgumentNotValidException exception,
-            HttpServletRequest request
-    ) {
+    public ResponseEntity<ApiErrorResponse> handleValidationException(MethodArgumentNotValidException exception, HttpServletRequest request) {
         List<String> details = exception.getBindingResult()
                 .getFieldErrors()
                 .stream()

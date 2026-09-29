@@ -25,23 +25,21 @@ public class EventIdempotencyService {
     private final StringRedisTemplate redisTemplate;
 
     /**
-     * Attempts to claim an event for processing.
-     * <p>
-     * A claim prevents concurrent processing of the same event and helps enforce idempotent event handling. Events that
-     * have already been marked as processed cannot be claimed again.
+     * Attempts to claim an event for processing by creating a temporary processing key
+     * in the Redis data store. If the event is already marked as processed or another
+     * process has an active claim, the method returns false.
      *
-     * @param eventId the unique identifier of the event
-     * @return {@code true} if the event was successfully claimed<br>
-     *         {@code false} if the event is already processed or currently being processed
+     * @param eventId the unique identifier of the event to claim for processing.
+     * @return {@code true} if the event was successfully claimed for processing, or
+     *         {@code false} if the event is already processed or claimed by another process.
      */
     public boolean claimForProcessing(UUID eventId) {
         String processedKey = "processed:event:" + eventId;
+        String processingKey = "processing:event:" + eventId;
 
         if (Boolean.TRUE.equals(redisTemplate.hasKey(processedKey))) {
             return false;
         }
-
-        String processingKey = "processing:event:" + eventId;
 
         Boolean claimed = redisTemplate.opsForValue()
                 .setIfAbsent(processingKey, "PROCESSING", Duration.ofMinutes(5));

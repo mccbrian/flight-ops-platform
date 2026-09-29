@@ -2,7 +2,6 @@ package com.flightops.processing.component;
 
 import com.flightops.contracts.avro.FailedEvent;
 import com.flightops.processing.dto.EventEnvelopeJson;
-import com.flightops.processing.idempotency.EventIdempotencyService;
 import com.flightops.processing.validation.ValidationError;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -58,7 +57,7 @@ public class FailedEventFactory {
             String reason,
             int attemptCount
     ) {
-        return FailedEvent.newBuilder()
+        FailedEvent build = FailedEvent.newBuilder()
                 .setOriginalEventId(envelope.eventId().toString())
                 .setOriginalEventType(envelope.eventType().name())
                 .setAggregateId(envelope.aggregateId())
@@ -71,6 +70,8 @@ public class FailedEventFactory {
                 .setMaxAttempts(maxAttempts)
                 .setFailedAt(Instant.now())
                 .build();
+
+        return build;
     }
 
     private String toRawEnvelopeJson(EventEnvelopeJson envelope) {
