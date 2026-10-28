@@ -1,0 +1,28 @@
+name: Flight Ops CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+
+  pull_request:
+    branches:
+      - main
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-test:
+    name: Verify GitHub Actions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Verify workflow
+        run: echo "Flight Ops CI is running successfully"
