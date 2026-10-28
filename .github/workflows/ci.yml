@@ -50,3 +50,9 @@ jobs:
 
       - name: Run processing unit tests
         run: mvn -B -ntp -f microservices/processing-service/pom.xml test
+
+      - name: Run ingestion integration tests
+        run: mvn -B -ntp -f microservices/ingestion-service/pom.xml '-Dtest=*IT' test
+
+      - name: Run processing integration tests
+        run: mvn -B -ntp -f microservices/processing-service/pom.xml '-Dtest=*IT' test
