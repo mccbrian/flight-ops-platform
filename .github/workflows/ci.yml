@@ -44,3 +44,9 @@ jobs:
 
       - name: Build processing service
         run: mvn -B -ntp -f microservices/processing-service/pom.xml -DskipTests package
+        
+      - name: Run ingestion unit tests
+        run: mvn -B -ntp -f microservices/ingestion-service/pom.xml test
+
+      - name: Run processing unit tests
+        run: mvn -B -ntp -f microservices/processing-service/pom.xml test
