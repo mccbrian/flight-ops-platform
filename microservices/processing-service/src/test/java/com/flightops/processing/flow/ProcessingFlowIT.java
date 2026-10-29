@@ -155,7 +155,7 @@ class ProcessingFlowIT {
     private static final String REASON = "WEATHER";
 
     @Container
-    static final KafkaContainer kafka = new KafkaContainer("apache/kafka:3.8.0");
+    static final KafkaContainer kafka = new KafkaContainer("apache/kafka:4.1.2");
 
     @Container
     @ServiceConnection
