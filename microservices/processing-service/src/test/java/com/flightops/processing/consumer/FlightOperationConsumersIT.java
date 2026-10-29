@@ -98,7 +98,7 @@ class FlightOperationConsumersIT {
     private static final long SETTLE_MILLIS = 3_000;
 
     @Container
-    static final KafkaContainer kafka = new KafkaContainer("apache/kafka:3.8.0");
+    static final KafkaContainer kafka = new KafkaContainer("apache/kafka:4.1.2");
 
     @Container
     @ServiceConnection

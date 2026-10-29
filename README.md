@@ -1,5 +1,7 @@
 # Flight Ops Platform
 
+[![Flight Ops CI](https://github.com/mccbrian/flight-ops-platform/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/mccbrian/flight-ops-platform/actions/workflows/ci.yml)
+
 ## Overview
 
 Flight Ops Platform is a distributed flight operations processing platform designed around event-driven architecture, resilient asynchronous workflows, and operational correctness.
@@ -98,7 +100,7 @@ Responsibilities include:
 * propagating correlation identifiers through HTTP responses, logging context, and Kafka headers
 * publishing events to Kafka
 
-The service intentionally does **not** perform business persistence. This keeps ingestion fast, stateless, and horizontally scalable.
+The service intentionally does **not** perform business persistence. To keep ingestion fast, stateless, and horizontally scalable.
 
 ## Kafka Event Backbone
 
@@ -420,35 +422,74 @@ Examples of future projection use cases:
 
 # Local Development
 
+Java 25, Maven 3.9+, Docker, and Docker Compose are required. The services run locally, while Kafka and supporting infrastructure run in containers. PostgreSQL is an existing local installation containing the `flights` database; the sample dataset is not packaged in this repository.
+
 ## Start Kafka and Schema Registry
 
 ```bash
-docker compose up -d
+docker compose -f infrastructure/kafka/docker-compose.yaml up -d
+bash infrastructure/kafka/scripts/create-topics.sh
 ```
 
 ## Start Redis
 
 ```bash
-docker compose up -d redis
+docker compose -f infrastructure/redis/docker-compose.yaml up -d
 ```
 
 ## Start Observability Infrastructure
 
 ```bash
-docker compose up -d prometheus
-docker compose up -d grafana
-docker compose up -d zipkin
+docker compose -f infrastructure/zipkin/docker-compose.yaml up -d
+docker compose -f infrastructure/prometheus/docker-compose.yaml up -d
+docker compose -f infrastructure/grafana/docker-compose.yaml up -d
 ```
+
+The Prometheus Compose file currently references a machine-specific absolute path for `prometheus.yaml`; update that mount when running the project from a different directory.
 
 ## Start Services
 
-```bash
-cd microservices/ingestion-service
-./mvnw spring-boot:run
+Build and install the shared Avro contracts first:
 
-cd ../processing-service
-./mvnw spring-boot:run
+```bash
+mvn -f shared-libraries/event-contracts/pom.xml clean install
 ```
+
+Configure the Processing Service environment variables (`SERVER_PORT`, `KAFKA_HOST`, `KAFKA_PORT`, `SCHEMA_REGISTRY_URL`, `DATASOURCE_URL`, `DATASOURCE_USERNAME`, `DATASOURCE_PASSWORD`, `REDIS_HOST`, and `REDIS_PORT`) through the shell or IDE. The database credentials are not embedded in the README.
+
+Run the services in separate terminals from the repository root:
+
+```bash
+mvn -f microservices/ingestion-service/pom.xml spring-boot:run
+```
+
+```bash
+mvn -f microservices/processing-service/pom.xml spring-boot:run
+```
+
+The Ingestion Service exposes `POST /api/v1/flight-operations` on port `8081`. Successful publication returns `202 Accepted`, meaning Kafka accepted the event for asynchronous processing rather than confirming database persistence.
+
+
+# Testing and Verification
+
+Both services include unit tests, and the platform has integration tests using Testcontainers. Tests cover the ingestion API and Kafka publication as well as the processing lifecycle.
+
+The processing test suite exercises:
+
+* durable persistence and duplicate-event handling
+* Redis claims and concurrent claim behavior
+* retry recovery, attempt limits, and DLQ escalation
+* Kafka consumer acknowledgment behavior
+* stale event rejection and optimistic update semantics
+
+Run the test suites after installing the shared contracts:
+
+```bash
+mvn -f microservices/ingestion-service/pom.xml verify
+mvn -f microservices/processing-service/pom.xml verify
+```
+
+Docker must be running for Testcontainers-backed integration tests. The repository contains these tests; successful results depend on the local build environment.
 
 
 # Repository Structure
@@ -474,36 +515,18 @@ flight-ops-platform/
 ```
 
 
-# Future Enhancements
+# Key Design Decisions
 
-The platform roadmap includes:
+The platform's architecture reflects deliberate design decisions focused on reliable event processing, clear service 
+boundaries, and operational correctness. The following summarizes the reasoning behind those choices.
 
-* exponential backoff
-* delayed retry scheduling
-* replay tooling
-* outbox pattern implementation
-* schema compatibility testing
-* trace enrichment and distributed trace dashboards
-* alerting rules and SLO-oriented dashboards
-* projection rebuild pipelines
-* stream processing
-* optimistic concurrency controls
-* operational dashboards
-
-
-# Architectural Notes
-
-This project intentionally emphasizes:
-
-* operational correctness
-* failure recovery
-* orchestration boundaries
-* event contract stability
-* reusable platform plumbing
-* resilient asynchronous processing
-
-over simplistic “happy path” implementations.
-
-A key architectural direction is that much of the platform plumbing is reusable across business domains. Once idempotency, retry/DLQ recovery, schema governance, and observability are established, new use cases should primarily require domain-specific validation and persistence logic rather than rebuilding the event-processing pipeline.
-
-The goal is to model how distributed operational systems evolve in production environments where failure handling, recoverability, and correctness are first-class concerns.
+| Decision | Benefit |
+| --- | --- |
+| Separate ingestion and processing services | Keeps API acceptance independent of database processing |
+| Kafka with Avro and Schema Registry | Durable event transport with explicit contracts |
+| Redis claims backed by PostgreSQL completion records | Reduces in-flight duplicate work while preserving durable deduplication |
+| Manual offset acknowledgment | Lets consumers acknowledge only after a handled outcome |
+| Bounded retry and DLQ recovery | Preserves failed events without unbounded application-level retries |
+| Spring Data JDBC and transactional writes | Keeps persistence explicit and business state consistent with processed-event records |
+| Event-time checks and optimistic locking | Prevents stale snapshots and conflicting updates |
+| Single-node local Kafka and separately deployed tools | Keeps development reproducible and easy to inspect |
