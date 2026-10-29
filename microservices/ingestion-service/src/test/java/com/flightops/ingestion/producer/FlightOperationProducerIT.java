@@ -43,7 +43,7 @@ class FlightOperationProducerIT {
     private static final String SCHEMA_REGISTRY_URL = "mock://flight-ops-test";
 
     @Container
-    static final KafkaContainer kafka = new KafkaContainer("apache/kafka:3.8.0");
+    static final KafkaContainer kafka = new KafkaContainer("apache/kafka:4.1.2");
 
     @Autowired
     private FlightOperationProducer producer;
